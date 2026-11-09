@@ -365,7 +365,9 @@
     const r = rng(opts.seed || Date.now());
     const sents = sentences(text);
     const freq = tf(sents);
-    const max = opts.count || (level === 'ninos' ? 5 : 10);
+    let max = opts.count || (level === 'ninos' ? 5 : 10);
+    if (max > 100) max = 100;
+    if (max < 1) max = 1;
     const scored = scoreSentences(sents, freq, level);
     const all = scored.map(x => ({ x, cs: candidates(x.s, freq) }));
     const bank = { prop: new Map(), term: new Map(), year: new Map(), num: new Map(), roman: new Map(), def: new Map() };

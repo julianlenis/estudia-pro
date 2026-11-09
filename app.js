@@ -145,6 +145,23 @@ $('bPaste').onclick = async () => { try { const t = await navigator.clipboard.re
 $('text').oninput = updCount;
 for (const b of $('level').children) b.onclick = () => { level = b.dataset.v; store.set('ep_level', level); paintLevel(); };
 function paintLevel() { for (const b of $('level').children) b.classList.toggle('on', b.dataset.v === level); }
+function getWantedCount() {
+  const v = $('nq').value;
+  if (v === 'custom') {
+    let n = parseInt($('nqCustom').value, 10);
+    if (!Number.isFinite(n) || n < 1) n = 10;
+    return Math.min(100, Math.max(1, n));
+  }
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+}
+function paintNqCustom() {
+  const wrap = $('nqCustomWrap');
+  if (!wrap) return;
+  wrap.classList.toggle('hide', $('nq').value !== 'custom');
+}
+if ($('nq')) $('nq').onchange = paintNqCustom;
+
 
 // ---------- ajustes / IA ----------
 $('bSettings').onclick = () => {
@@ -214,21 +231,26 @@ async function openDoc(doc, opts = {}) {
   $('kw').innerHTML = '';
   $('bStart').disabled = true;
   $('bStart').textContent = 'Preparando test…';
-  const n = +$('nq').value || 0;
+  const wanted = getWantedCount();
   const images = opts.images || [];
   let usedAi = false;
   let aiNote = '';
+  let shortNote = '';
 
   if (EPAi.hasKey() && (doc.text.trim().length >= 40 || images.length)) {
     try {
-      progress(0.2, '✨ Gemini está creando el test…');
+      progress(0.05, wanted > 25 ? ('Creando preguntas 0/' + wanted + '…') : '✨ Gemini está creando el test…');
       busy(true);
       const result = await EPAi.generate({
         text: doc.text,
         images,
         level,
-        count: n || undefined,
-        title: doc.title
+        count: wanted || undefined,
+        title: doc.title,
+        onProgress: ({ have, want, msg }) => {
+          const pct = want ? Math.min(0.95, 0.05 + 0.9 * (have / want)) : 0.3;
+          progress(pct, msg || ('Creando preguntas ' + have + '/' + want + '…'));
+        }
       });
       S.qs = result.questions;
       S.sum = result.summary;
@@ -236,7 +258,12 @@ async function openDoc(doc, opts = {}) {
       usedAi = true;
       pendingImages = [];
       updCount();
-      progress(1, '✅ Test creado con IA');
+      if (result.partial && result.requested && S.qs.length < result.requested) {
+        shortNote = 'La IA generó ' + S.qs.length + ' de ' + result.requested + ' (límite o error en un lote). Puedes reintentar o añadir más apuntes.';
+      } else if (wanted && S.qs.length < wanted) {
+        shortNote = 'La IA generó ' + S.qs.length + ' preguntas (pediste ' + wanted + ').';
+      }
+      progress(1, '✅ Test creado con IA · ' + S.qs.length + ' preguntas');
     } catch (e) {
       aiNote = EPAi.spanishError(e, e.status);
       progress(1, '⚠️ ' + aiNote);
@@ -247,15 +274,22 @@ async function openDoc(doc, opts = {}) {
   if (!usedAi) {
     const sum = EPGen.summarize(doc.text, { level });
     S.sum = sum;
-    S.qs = EPGen.generate(doc.text, { level, count: n || undefined, seed: S.seed });
+    const ask = wanted || (level === 'ninos' ? 5 : 10);
+    S.qs = EPGen.generate(doc.text, { level, count: ask, seed: S.seed });
     S.ai = false;
+    if (S.qs.length < ask) {
+      shortNote = 'Tu material da para ' + S.qs.length + ' preguntas; añade más páginas o texto para llegar a ' + ask + '.';
+    }
     if (aiNote) {
       const note = $('v-study').querySelector('.note');
-      if (note) note.textContent = '⚠️ ' + aiNote + ' Se usó el generador gratis automático.';
+      if (note) note.textContent = '⚠️ ' + aiNote + ' Se usó el generador gratis automático.' + (shortNote ? ' ' + shortNote : '');
+    } else if (shortNote) {
+      const note = $('v-study').querySelector('.note');
+      if (note) note.textContent = 'ℹ️ ' + shortNote;
     }
   } else {
     const note = $('v-study').querySelector('.note');
-    if (note) note.textContent = '✨ Resumen y preguntas creados con Gemini (tu clave). Revísalos con tus apuntes.';
+    if (note) note.textContent = '✨ Resumen y preguntas creados con Gemini (tu clave). Revísalos con tus apuntes.' + (shortNote ? ' ' + shortNote : '');
   }
 
   $('sTitle').textContent = (S.ai ? '✨ Resumen IA · ' : 'Resumen · ') + doc.title;
@@ -266,14 +300,16 @@ async function openDoc(doc, opts = {}) {
   $('bStart').textContent = S.qs.length
     ? `📝 Empezar test (${S.qs.length} preguntas${S.ai ? ' · IA' : ''})`
     : 'No he podido sacar preguntas: añade más texto o fotos';
-  setTimeout(() => progress(null), 1800);
+  setTimeout(() => progress(null), wanted > 25 ? 2500 : 1800);
 }
 function makeTestLocal() {
-  const n = +$('nq').value || 0;
-  S.qs = EPGen.generate(S.doc.text, { level, count: n || undefined, seed: S.seed });
+  const ask = getWantedCount() || (level === 'ninos' ? 5 : 10);
+  S.qs = EPGen.generate(S.doc.text, { level, count: ask, seed: S.seed });
   S.ai = false; S.mode = 'normal';
   $('bStart').disabled = !S.qs.length;
-  $('bStart').textContent = S.qs.length ? `📝 Empezar test (${S.qs.length} preguntas)` : 'No he podido sacar preguntas: añade más texto';
+  let label = S.qs.length ? `📝 Empezar test (${S.qs.length} preguntas)` : 'No he podido sacar preguntas: añade más texto';
+  if (S.qs.length && S.qs.length < ask) label += ` · material da para ${S.qs.length}`;
+  $('bStart').textContent = label;
 }
 $('bStart').onclick = () => startTest(S.qs, 'normal');
 $('bBack1').onclick = () => { show('home'); renderLists(); paintAiBadge(); };
@@ -383,5 +419,5 @@ function renderLists() {
 const draft = store.get('ep_draft', null); if (draft) { $('title').value = draft.title || ''; $('text').value = draft.text || ''; }
 setInterval(() => { try { localStorage.setItem('ep_draft', JSON.stringify({ title: $('title').value, text: $('text').value })); } catch { } }, 3000);
 function net() { $('off').classList.toggle('hide', navigator.onLine); } addEventListener('online', net); addEventListener('offline', net); net();
-paintLevel(); updCount(); renderLists(); paintAiBadge();
+paintLevel(); paintNqCustom(); updCount(); renderLists(); paintAiBadge();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => { });

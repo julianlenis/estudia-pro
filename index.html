@@ -93,7 +93,20 @@ input[type=password]{width:100%;padding:12px;border-radius:12px;border:2px solid
   <div class="card"><h2>2 · Elige el nivel</h2>
     <div class="seg" id="level"><button data-v="ninos">🧒 Niños</button><button data-v="adultos" class="on">🎓 Adultos</button></div>
     <label for="nq">Número de preguntas</label>
-    <select id="nq"><option value="0">Automático</option><option>5</option><option>10</option><option>15</option><option>20</option></select>
+    <select id="nq">
+      <option value="0">Automático</option>
+      <option value="10">10</option>
+      <option value="20">20</option>
+      <option value="30">30</option>
+      <option value="50">50</option>
+      <option value="75">75</option>
+      <option value="100">100</option>
+      <option value="custom">Otro (hasta 100)…</option>
+    </select>
+    <div id="nqCustomWrap" class="hide" style="margin-top:8px">
+      <label for="nqCustom">¿Cuántas? (1–100)</label>
+      <input type="number" id="nqCustom" min="1" max="100" value="60" inputmode="numeric">
+    </div>
     <div style="height:12px"></div><button class="btn pri" id="bGen">✨ ¡Crear resumen y test!</button>
   </div>
   <div class="card"><h2>Mis apuntes</h2><div id="docs" class="muted">Todavía no hay apuntes guardados.</div></div>

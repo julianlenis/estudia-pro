@@ -10,6 +10,11 @@
   const MODEL = 'gemini-3.5-flash-lite';
   const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
   const KEY_LS = 'ep_gemini_key';
+  const BATCH_SIZE = 25; // preguntas por petición
+  const MIN_GAP_MS = 6500; // ~10 RPM free-tier Flash-Lite
+  const MAX_QUESTIONS = 100;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const qNorm = s => String(s || '').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 
   const SCHEMA = {
     type: 'OBJECT',
@@ -173,27 +178,56 @@
     return validateQuestions(data, want);
   }
 
-  function buildPrompt({ level, count, title }) {
-    const n = count || (level === 'ninos' ? 5 : 10);
+  function buildPrompt({ level, count, title, avoid, chunkLabel, needSummary }) {
+    const n = count;
     const lvl = level === 'ninos'
       ? 'Nivel niños: vocabulario sencillo, frases cortas, tono amable.'
       : 'Nivel adultos: preciso y claro, sin infantilizar.';
+    let avoidBlock = '';
+    if (avoid && avoid.length) {
+      avoidBlock = '\nNO repitas ni parafrasees estas preguntas ya hechas:\n- ' +
+        avoid.slice(0, 80).map(q => q.replace(/\n/g, ' ').slice(0, 160)).join('\n- ') + '\n';
+    }
+    const focus = chunkLabel ? ('\nEnfócate sobre todo en esta parte del material: ' + chunkLabel + '\n') : '';
+    const sumRule = needSummary
+      ? '- summary: 3 a 6 frases con lo esencial del tema' + (title ? ' «' + title + '»' : '') + '.\n'
+      : '- summary: array vacío [] (el resumen ya se pidió antes).\n';
     return `Eres un profesor que crea tests de estudio en español a partir de apuntes.
 ${lvl}
 Crea exactamente ${n} preguntas tipo test (4 opciones, UNA sola correcta) sobre LO MÁS IMPORTANTE del material (definiciones, fechas, causas, procesos, datos clave).
-Reglas:
+${focus}${avoidBlock}Reglas:
 - Preguntas claras, sin errores de ortografía ni gramática.
 - Las 4 opciones deben ser distintas, plausibles y de longitud similar; nunca dos iguales.
 - correct = índice 0..3 de la opción correcta.
 - explanation: 1 frase corta que explique por qué es correcta.
-- summary: 3 a 6 frases con lo esencial del tema${title ? ' «' + title + '»' : ''}.
-- No inventes datos que no estén en el material.
+${sumRule}- No inventes datos que no estén en el material.
+- Prefiere variedad: no hagas varias preguntas casi iguales.
 Responde SOLO con el JSON pedido.`;
   }
 
-  async function generate({ text, images, level, count, title, key } = {}) {
-    const n = count || (level === 'ninos' ? 5 : 10);
-    const parts = [{ text: buildPrompt({ level, count: n, title }) }];
+  function splitTextChunks(text, nChunks) {
+    const t = String(text || '').trim();
+    if (!t || nChunks <= 1) return [t];
+    const paras = t.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+    if (paras.length >= nChunks) {
+      const chunks = Array.from({ length: nChunks }, () => []);
+      paras.forEach((p, i) => chunks[i % nChunks].push(p));
+      return chunks.map(c => c.join('\n\n'));
+    }
+    // por caracteres con solape
+    const size = Math.ceil(t.length / nChunks);
+    const out = [];
+    for (let i = 0; i < nChunks; i++) {
+      const start = Math.max(0, i * size - Math.floor(size * 0.15));
+      const end = Math.min(t.length, (i + 1) * size + Math.floor(size * 0.1));
+      out.push(t.slice(start, end));
+    }
+    return out;
+  }
+
+  async function generateOne({ text, images, level, count, title, key, avoid, chunkLabel, needSummary, temperature }) {
+    const n = count;
+    const parts = [{ text: buildPrompt({ level, count: n, title, avoid, chunkLabel, needSummary }) }];
     if (text && String(text).trim()) {
       parts.push({ text: '\n\n--- APUNTES (texto) ---\n' + String(text).trim().slice(0, 60000) });
     }
@@ -202,7 +236,7 @@ Responde SOLO con el JSON pedido.`;
         parts.push({
           inlineData: {
             mimeType: img.mimeType || 'image/jpeg',
-            data: img.data // base64 sin prefijo data:
+            data: img.data
           }
         });
       }
@@ -213,14 +247,104 @@ Responde SOLO con el JSON pedido.`;
       e.status = 0;
       throw e;
     }
-    const raw = await callGemini(parts, { key, temperature: 0.35 });
-    const parsed = parseResponse(raw, n);
-    if (!parsed.questions.length) {
-      const e = new Error('invalid response: no valid questions');
-      e.status = 0;
+    const raw = await callGemini(parts, { key, temperature: temperature == null ? 0.35 : temperature });
+    return parseResponse(raw, n);
+  }
+
+  function mergeQuestions(into, more) {
+    const seen = new Set(into.map(q => qNorm(q.question)));
+    for (const q of more) {
+      const k = qNorm(q.question);
+      if (!k || seen.has(k)) continue;
+      // también evita si la respuesta+tema es casi idéntica a otra
+      const sig = qNorm(q.answerText) + '|' + k.slice(0, 40);
+      if ([...seen].some(s => s.slice(0, 40) === k.slice(0, 40) && k.length > 20)) continue;
+      seen.add(k);
+      into.push(q);
+    }
+    return into;
+  }
+
+  async function generate({ text, images, level, count, title, key, onProgress } = {}) {
+    let want = count == null || count === 0
+      ? (level === 'ninos' ? 5 : 10)
+      : (+count || 10);
+    want = Math.max(1, Math.min(MAX_QUESTIONS, want));
+
+    const report = (have) => {
+      if (typeof onProgress === 'function') {
+        try { onProgress({ have, want, msg: 'Creando preguntas ' + have + '/' + want + '…' }); } catch (_) {}
+      }
+    };
+
+    // Una sola petición si cabe en un lote
+    if (want <= BATCH_SIZE) {
+      report(0);
+      const parsed = await generateOne({
+        text, images, level, count: want, title, key,
+        avoid: [], needSummary: true, chunkLabel: ''
+      });
+      if (!parsed.questions.length) {
+        const e = new Error('invalid response: no valid questions');
+        e.status = 0;
+        throw e;
+      }
+      report(parsed.questions.length);
+      return { summary: parsed.summary, questions: parsed.questions.map((q, i) => (q.id = i + 1, q)), partial: false };
+    }
+
+    const batches = Math.ceil(want / BATCH_SIZE);
+    const chunks = splitTextChunks(text, batches);
+    const all = [];
+    let summary = [];
+    let lastErr = null;
+
+    for (let i = 0; i < batches && all.length < want; i++) {
+      if (i > 0) await sleep(MIN_GAP_MS);
+      const need = Math.min(BATCH_SIZE, want - all.length);
+      report(all.length);
+      const chunk = chunks[i] || text;
+      // Incluye también un extracto global corto para contexto
+      const globalHint = text && text.length > (chunk || '').length
+        ? '\n\n(Contexto general del tema, extracto):\n' + String(text).slice(0, 4000)
+        : '';
+      try {
+        const parsed = await generateOne({
+          text: (chunk || '') + globalHint,
+          images: i === 0 ? images : [],
+          level,
+          count: need,
+          title,
+          key,
+          avoid: all.map(q => q.question),
+          needSummary: i === 0,
+          chunkLabel: batches > 1 ? ('bloque ' + (i + 1) + ' de ' + batches) : '',
+          temperature: 0.35 + Math.min(0.25, i * 0.05)
+        });
+        if (i === 0 && parsed.summary && parsed.summary.length) summary = parsed.summary;
+        mergeQuestions(all, parsed.questions);
+        report(Math.min(all.length, want));
+      } catch (e) {
+        lastErr = e;
+        if (all.length) break; // conservar lo generado
+        throw e;
+      }
+    }
+
+    if (!all.length) {
+      const e = lastErr || new Error('invalid response: no valid questions');
+      e.status = (lastErr && lastErr.status) || 0;
       throw e;
     }
-    return parsed;
+
+    const questions = all.slice(0, want).map((q, i) => Object.assign({}, q, { id: i + 1 }));
+    return {
+      summary,
+      questions,
+      partial: !!lastErr || questions.length < want,
+      error: lastErr || null,
+      requested: want
+    };
   }
 
   async function testKey(key) {
@@ -275,6 +399,7 @@ Responde SOLO con el JSON pedido.`;
     MODEL, SCHEMA, KEY_LS,
     getKey, setKey, clearKey, hasKey,
     spanishError, callGemini, parseResponse, validateQuestions,
-    generate, testKey, blobToInline, buildPrompt
+    generate, generateOne, testKey, blobToInline, buildPrompt,
+    splitTextChunks, mergeQuestions, BATCH_SIZE, MIN_GAP_MS, MAX_QUESTIONS
   };
 });
