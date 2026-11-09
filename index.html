@@ -57,8 +57,23 @@ textarea{min-height:150px;resize:vertical;line-height:1.45;font-weight:500}
 .hide{display:none!important}input[type=file]{display:none}
 #off{position:fixed;bottom:0;left:0;right:0;background:#f59e0b;color:#fff;text-align:center;font-size:13px;font-weight:800;padding:8px calc(6px + env(safe-area-inset-bottom))}
 .cheer{text-align:center;font-size:15px;font-weight:800;color:#ea580c;margin-bottom:10px}
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin:4px 0 16px}
+.topbar header{margin:0;flex:1}
+.iconbtn{border:0;background:#fff;border:2px solid #fed7aa;border-radius:14px;width:44px;height:44px;font-size:20px;cursor:pointer;box-shadow:0 3px 0 #fdba74;flex-shrink:0}
+.badge{display:inline-block;font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;margin:0 0 10px}
+.badge.on{background:#dcfce7;color:#166534;border:2px solid #86efac}
+.badge.off{background:#fff7ed;color:#9a3412;border:2px solid #fed7aa}
+.expl{margin-top:12px;padding:12px;border-radius:14px;background:#ecfdf5;border:2px solid #86efac;color:#166534;font-size:14px;font-weight:700;line-height:1.4}
+.help a{color:#7c3aed;font-weight:800}
+.status-ok{color:#16a34a;font-weight:800}.status-err{color:#dc2626;font-weight:800}
+input[type=password]{width:100%;padding:12px;border-radius:12px;border:2px solid #fed7aa;background:#fff7ed;color:#78350f;font-size:16px;font-family:inherit;font-weight:600}
+
 </style></head><body><main>
+<div class="topbar">
 <header><div class="logo" aria-hidden="true">📚</div><h1>Estudia Pro<small>by Julián Lenis · versión de prueba</small></h1></header>
+<button type="button" class="iconbtn" id="bSettings" title="Ajustes / IA" aria-label="Ajustes">⚙️</button>
+</div>
+<div id="aiBadge" class="badge off">IA desactivada · generador gratis</div>
 
 <section id="v-home">
   <div class="cheer">¡A estudiar! 🎨</div>
@@ -87,7 +102,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.45;font-weight:500}
 </section>
 
 <section id="v-study" class="hide">
-  <div class="note">⚠️ El resumen y las preguntas se crean automáticamente a partir de tu texto (sin IA de pago). Pueden tener fallos: revísalos con tus apuntes.</div>
+  <div class="note">⚠️ Revisa el resumen y las preguntas con tus apuntes. Si la IA falla, se usa el generador gratis automático.</div>
   <div class="card"><h2 id="sTitle">Resumen</h2><ul class="sum" id="sum"></ul><h2 style="margin-top:14px">Palabras clave</h2><div class="chips" id="kw"></div></div>
   <button class="btn pri" id="bStart">📝 Empezar test</button><div style="height:8px"></div>
   <button class="btn ghost" id="bBack1">← Volver</button>
@@ -95,7 +110,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.45;font-weight:500}
 
 <section id="v-test" class="hide">
   <div class="card"><div class="row"><span class="muted" id="tPos"></span><span class="muted" id="tMode" style="text-align:right"></span></div><div class="bar"><i id="tBar"></i></div>
-    <div class="q" id="tQ"></div><div id="tOpts"></div></div>
+    <div class="q" id="tQ"></div><div id="tOpts"></div><div id="tExpl" class="expl hide"></div></div>
   <div class="row"><button class="btn ghost" id="bPrev">← Anterior</button><button class="btn orange" id="bNext">Siguiente →</button></div>
   <div style="height:8px"></div><button class="btn ghost small" id="bQuit">Salir del test</button>
 </section>
@@ -107,7 +122,35 @@ textarea{min-height:150px;resize:vertical;line-height:1.45;font-weight:500}
   <div style="height:12px"></div><div class="card"><h2>Corrección</h2><div id="rList"></div></div>
   <button class="btn ghost" id="bHome">🏠 Inicio</button>
 </section>
+
+<section id="v-settings" class="hide">
+  <div class="card">
+    <h2>⚙️ Ajustes / IA</h2>
+    <p class="help muted" style="opacity:1;margin-bottom:10px;line-height:1.45">
+      Puedes pegar tu propia clave gratis de <b>Google Gemini</b>. Se guarda <b>solo en este móvil</b> (localStorage): no se sube a ningún servidor nuestro.
+      Consíguela en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> (cuenta de Google, sin pagar).
+    </p>
+    <label for="apiKey">Clave de Gemini (API key)</label>
+    <input type="password" id="apiKey" placeholder="Pega aquí tu clave…" autocomplete="off" spellcheck="false">
+    <div style="height:12px"></div>
+    <div class="grid">
+      <button type="button" class="btn ok" id="bSaveKey">💾 Guardar</button>
+      <button type="button" class="btn sky" id="bTestKey">🔌 Probar clave</button>
+    </div>
+    <div style="height:8px"></div>
+    <button type="button" class="btn ghost" id="bClearKey">🗑 Borrar clave</button>
+    <div class="muted" id="keyStatus" style="margin-top:12px;opacity:1"></div>
+  </div>
+  <div class="card">
+    <h2>Cómo funciona</h2>
+    <p class="muted" style="opacity:1;line-height:1.45;font-weight:600">
+      Con clave: las fotos van directo a Gemini (sin OCR) y el test sale con IA gratis (modelo Flash-Lite).
+      Sin clave o si falla la IA: se usa el generador automático gratis de siempre.
+    </p>
+  </div>
+  <button type="button" class="btn ghost" id="bBackSettings">← Volver</button>
+</section>
 <div id="off" class="hide">Sin conexión · las fotos y PDF necesitan haber abierto la app con internet una vez</div>
 </main>
-<script src="gen.js"></script><script src="app.js"></script>
+<script src="gen.js"></script><script src="ai.js"></script><script src="app.js"></script>
 </body></html>
