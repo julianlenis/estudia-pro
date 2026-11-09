@@ -1,0 +1,88 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Estudia Pro"><link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png"><link rel="icon" href="icon-192.png"><title>Estudia Pro by Julián Lenis</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:560px;margin:auto;padding:16px 16px 40px}
+header{display:flex;align-items:center;gap:10px;margin:4px 0 14px}header img{width:40px;height:40px;border-radius:10px}
+h1{font-size:21px;margin:0}h1 small{display:block;font-size:12px;color:#94a3b8;font-weight:500}
+h2{font-size:14px;margin:0 0 10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em}
+.card{background:#1e293b;border-radius:16px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 4px}
+input[type=text],select,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:16px;font-family:inherit}
+textarea{min-height:170px;resize:vertical;line-height:1.4}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+.btn{display:block;border:0;border-radius:14px;padding:15px 8px;font-size:16px;font-weight:700;color:#fff;width:100%;background:#334155;text-align:center;cursor:pointer;user-select:none;-webkit-user-select:none}
+.btn:disabled{opacity:.35}.pri{background:#7c3aed}.ok{background:#16a34a}.warn{background:#d97706}.ghost{background:transparent;border:1px solid #334155}
+.small{padding:8px 12px;font-size:14px;border-radius:10px;width:auto;display:inline-block}
+.seg{display:flex;background:#0f172a;border-radius:12px;padding:4px;border:1px solid #334155}.seg button{flex:1;border:0;background:none;color:#94a3b8;padding:10px;border-radius:9px;font-size:15px;font-weight:600}
+.seg button.on{background:#7c3aed;color:#fff}
+.muted{color:#94a3b8;font-size:13px}.note{background:#422006;color:#fde68a;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.bar{height:8px;background:#0f172a;border-radius:6px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:#7c3aed;width:0;transition:width .2s}
+.sum li{margin:0 0 8px;line-height:1.45}.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{background:#312e81;color:#c7d2fe;border-radius:20px;padding:4px 10px;font-size:13px}
+.q{font-size:18px;line-height:1.5;margin:6px 0 14px}.q b{color:#fde047}
+.opt{display:block;width:100%;text-align:left;margin:0 0 8px;padding:14px;border-radius:12px;border:2px solid #334155;background:#0f172a;color:#e2e8f0;font-size:16px}
+.opt.sel{border-color:#7c3aed;background:#2e1065}.opt.good{border-color:#16a34a;background:#052e16}.opt.bad{border-color:#dc2626;background:#450a0a}
+.score{font-size:52px;font-weight:800;text-align:center}.res{border-top:1px solid #334155;padding:10px 0}.res:first-child{border:0}
+.src{font-size:13px;color:#cbd5e1;background:#0f172a;border-left:3px solid #7c3aed;padding:6px 8px;border-radius:6px;margin-top:6px}
+.item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #334155}.item:last-child{border:0}
+.item div{min-width:0}.item b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hide{display:none!important}input[type=file]{display:none}
+#off{position:fixed;bottom:0;left:0;right:0;background:#d97706;color:#fff;text-align:center;font-size:13px;padding:6px calc(6px + env(safe-area-inset-bottom))}
+</style></head><body><main>
+<header><img src="icon-192.png" alt=""><h1>Estudia Pro<small>by Julián Lenis · versión de prueba</small></h1></header>
+
+<section id="v-home">
+  <div class="card"><h2>1 · Añade tus apuntes</h2>
+    <div class="grid">
+      <label class="btn pri" style="margin:0">📷 Hacer foto<input id="fCam" type="file" accept="image/*" capture="environment" multiple></label>
+      <label class="btn" style="margin:0">🖼️ Fotos de galería<input id="fImg" type="file" accept="image/*" multiple></label>
+      <label class="btn" style="margin:0">📄 PDF<input id="fPdf" type="file" accept="application/pdf,.pdf"></label>
+      <button class="btn" id="bPaste">✍️ Pegar texto</button>
+    </div>
+    <div id="prog" class="hide"><div class="bar"><i id="progBar"></i></div><div class="muted" id="progTxt"></div></div>
+    <label for="title">Tema / título</label><input type="text" id="title" placeholder="Ej.: El ciclo del agua">
+    <label for="text">Texto (revísalo y corrige lo que se haya leído mal)</label>
+    <textarea id="text" placeholder="Aquí aparecerá el texto de tus fotos o PDF. También puedes escribir o pegar texto."></textarea>
+    <div class="muted" id="count">0 palabras</div>
+  </div>
+  <div class="card"><h2>2 · Elige el nivel</h2>
+    <div class="seg" id="level"><button data-v="ninos">🧒 Niños</button><button data-v="adultos" class="on">🎓 Adultos</button></div>
+    <label for="nq">Número de preguntas</label>
+    <select id="nq"><option value="0">Automático</option><option>5</option><option>10</option><option>15</option><option>20</option></select>
+    <div style="height:12px"></div><button class="btn pri" id="bGen">✨ Crear resumen y test</button>
+  </div>
+  <div class="card"><h2>Mis apuntes</h2><div id="docs" class="muted">Todavía no hay apuntes guardados.</div></div>
+  <div class="card"><h2>Mis resultados</h2><div id="hist" class="muted">Todavía no has hecho ningún test.</div></div>
+  <p class="muted" style="text-align:center">Todo se procesa en tu móvil: tus fotos y apuntes no se suben a ningún servidor.</p>
+</section>
+
+<section id="v-study" class="hide">
+  <div class="note">⚠️ El resumen y las preguntas se crean automáticamente a partir de tu texto (sin IA). Pueden tener fallos: revísalos con tus apuntes.</div>
+  <div class="card"><h2 id="sTitle">Resumen</h2><ul class="sum" id="sum"></ul><h2 style="margin-top:14px">Palabras clave</h2><div class="chips" id="kw"></div></div>
+  <button class="btn pri" id="bStart">📝 Empezar test</button><div style="height:8px"></div>
+  <button class="btn ghost" id="bBack1">← Volver</button>
+</section>
+
+<section id="v-test" class="hide">
+  <div class="card"><div class="row"><span class="muted" id="tPos"></span><span class="muted" id="tMode" style="text-align:right"></span></div><div class="bar"><i id="tBar"></i></div>
+    <div class="q" id="tQ"></div><div id="tOpts"></div></div>
+  <div class="row"><button class="btn ghost" id="bPrev">← Anterior</button><button class="btn pri" id="bNext">Siguiente →</button></div>
+  <div style="height:8px"></div><button class="btn ghost small" id="bQuit">Salir del test</button>
+</section>
+
+<section id="v-res" class="hide">
+  <div class="card"><div class="score" id="rScore"></div><div class="muted" style="text-align:center" id="rTxt"></div></div>
+  <div class="grid"><button class="btn warn" id="bReview">🔁 Repasar fallos</button><button class="btn" id="bAgain">🔄 Repetir test</button></div>
+  <div style="height:8px"></div><button class="btn pri" id="bNew">✨ Test con otras preguntas</button>
+  <div style="height:12px"></div><div class="card"><h2>Corrección</h2><div id="rList"></div></div>
+  <button class="btn ghost" id="bHome">🏠 Inicio</button>
+</section>
+<div id="off" class="hide">Sin conexión · las fotos y PDF necesitan haber abierto la app con internet una vez</div>
+</main>
+<script src="gen.js"></script><script src="app.js"></script>
+</body></html>
