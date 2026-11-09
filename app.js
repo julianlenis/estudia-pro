@@ -141,6 +141,24 @@ async function onPdf(file) {
 $('fCam').onchange = e => { onImages(e.target.files); e.target.value = ''; };
 $('fImg').onchange = e => { onImages(e.target.files); e.target.value = ''; };
 $('fPdf').onchange = e => { onPdf(e.target.files[0]); e.target.value = ''; };
+
+$('bClearText').onclick = () => {
+  const has = $('text').value.trim() || $('title').value.trim() || pendingImages.length;
+  if (!has) { alert('No hay texto ni fotos que borrar.'); return; }
+  if (!confirm('¿Borrar el texto, el título y las fotos cargadas? Así puedes poner material nuevo. (No se borra tu historial ni la clave de IA.)')) return;
+  clearMaterial();
+  progress(1, '🗑️ Texto y fotos borrados. Ya puedes cargar algo nuevo.');
+  setTimeout(() => progress(null), 2000);
+};
+$('bFreshTest').onclick = () => {
+  if (!confirm('¿Empezar un test nuevo? Se descartará este test y se borrará el material cargado para que puedas poner otro.')) return;
+  goFreshHome();
+};
+$('bFreshRes').onclick = () => {
+  if (!confirm('¿Empezar un test nuevo con otro material? Se borrará el texto/fotos actuales (tu historial de notas se conserva).')) return;
+  goFreshHome();
+};
+
 $('bPaste').onclick = async () => { try { const t = await navigator.clipboard.readText(); if (t) { addText(t); return; } } catch { } $('text').focus(); };
 $('text').oninput = updCount;
 for (const b of $('level').children) b.onclick = () => { level = b.dataset.v; store.set('ep_level', level); paintLevel(); };
@@ -209,6 +227,29 @@ $('bTestKey').onclick = async () => {
   }
   $('bTestKey').disabled = false;
 };
+
+
+// ---------- borrar material / nuevo test ----------
+function clearMaterial({ clearProg } = {}) {
+  $('title').value = '';
+  $('text').value = '';
+  pendingImages = [];
+  try { localStorage.removeItem('ep_draft'); } catch {}
+  // no tocamos ep_gemini_key, ep_docs, ep_results, ep_level
+  if (clearProg !== false) progress(null);
+  updCount();
+}
+function discardCurrentTest() {
+  S = { doc: null, qs: [], answers: [], revealed: [], pos: 0, mode: 'normal', seed: 1, ai: false, sum: null };
+}
+function goFreshHome() {
+  discardCurrentTest();
+  clearMaterial();
+  show('home');
+  renderLists();
+  paintAiBadge();
+  scrollTo(0, 0);
+}
 
 // ---------- generar ----------
 $('bGen').onclick = async () => {

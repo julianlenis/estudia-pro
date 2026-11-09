@@ -89,6 +89,8 @@ input[type=password]{width:100%;padding:12px;border-radius:12px;border:2px solid
     <label for="text">Texto (revísalo y corrige lo que se haya leído mal)</label>
     <textarea id="text" placeholder="Aquí aparecerá el texto de tus fotos o PDF. También puedes escribir o pegar texto."></textarea>
     <div class="muted" id="count">0 palabras</div>
+    <div style="height:10px"></div>
+    <button type="button" class="btn ghost" id="bClearText">🗑️ Borrar texto</button>
   </div>
   <div class="card"><h2>2 · Elige el nivel</h2>
     <div class="seg" id="level"><button data-v="ninos">🧒 Niños</button><button data-v="adultos" class="on">🎓 Adultos</button></div>
@@ -125,13 +127,18 @@ input[type=password]{width:100%;padding:12px;border-radius:12px;border:2px solid
   <div class="card"><div class="row"><span class="muted" id="tPos"></span><span class="muted" id="tMode" style="text-align:right"></span></div><div class="bar"><i id="tBar"></i></div>
     <div class="q" id="tQ"></div><div id="tOpts"></div><div id="tExpl" class="expl hide"></div></div>
   <div class="row"><button class="btn ghost" id="bPrev">← Anterior</button><button class="btn orange" id="bNext">Siguiente →</button></div>
-  <div style="height:8px"></div><button class="btn ghost small" id="bQuit">Salir del test</button>
+  <div style="height:8px"></div>
+  <div class="grid">
+    <button class="btn ghost" id="bQuit">Salir del test</button>
+    <button class="btn warn" id="bFreshTest">🆕 Nuevo test</button>
+  </div>
 </section>
 
 <section id="v-res" class="hide">
   <div class="card"><div class="score" id="rScore"></div><div class="muted" style="text-align:center" id="rTxt"></div></div>
   <div class="grid"><button class="btn warn" id="bReview">🔁 Repasar fallos</button><button class="btn sky" id="bAgain">🔄 Repetir test</button></div>
   <div style="height:8px"></div><button class="btn pri" id="bNew">✨ Test con otras preguntas</button>
+  <div style="height:8px"></div><button class="btn orange" id="bFreshRes">🆕 Nuevo test</button>
   <div style="height:12px"></div><div class="card"><h2>Corrección</h2><div id="rList"></div></div>
   <button class="btn ghost" id="bHome">🏠 Inicio</button>
 </section>
