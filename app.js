@@ -141,10 +141,11 @@ function startTest(qs, mode) { S.qs = qs; S.mode = mode; S.answers = new Array(q
 function renderQ() {
   const q = S.qs[S.pos];
   $('tPos').textContent = `Pregunta ${S.pos + 1} de ${S.qs.length}`;
-  $('tMode').textContent = S.mode === 'review' ? '🔁 Repaso de fallos' : (level === 'ninos' ? '🧒 Niños' : '🎓 Adultos');
+  $('tMode').textContent = S.mode === 'review' ? '🔁 Repaso de fallos' : (level === 'ninos' ? '🧒 ¡Tú puedes!' : '🎓 Adultos');
   $('tBar').style.width = ((S.pos + 1) / S.qs.length * 100) + '%';
-  $('tQ').innerHTML = '¿Qué palabra falta?<br>' + esc(q.question).replace('_____', '<b>_____</b>');
-  $('tOpts').innerHTML = q.options.map((o, i) => `<button class="opt${S.answers[S.pos] === i ? ' sel' : ''}" data-i="${i}">${'ABCD'[i]}) ${esc(o)}</button>`).join('');
+  const qHtml = esc(q.question).replace(/_____/g, '<b>_____</b>');
+  $('tQ').innerHTML = q.kind === 'cloze' && !/^Completa:/i.test(q.question) ? ('¿Qué palabra falta?<br>' + qHtml) : qHtml;
+  $('tOpts').innerHTML = q.options.map((o, i) => `<button class="opt${S.answers[S.pos] === i ? ' sel' : ''}" data-i="${i}"><b>${'ABCD'[i]}</b> · ${esc(o)}</button>`).join('');
   for (const b of $('tOpts').children) b.onclick = () => { S.answers[S.pos] = +b.dataset.i; renderQ(); };
   $('bPrev').disabled = S.pos === 0;
   const last = S.pos === S.qs.length - 1;
@@ -162,9 +163,9 @@ function finish() {
   $('rTxt').textContent = `Nota: ${String(nota).replace('.', ',')} de 10 · ${g.pct}% ` + (g.pct === 100 ? '🏆 ¡Perfecto!' : g.pct >= 70 ? '👏 ¡Muy bien!' : g.pct >= 50 ? '👍 Aprobado' : '💪 Repasa y vuelve a intentarlo');
   $('rList').innerHTML = S.qs.map((q, i) => {
     const ok = S.answers[i] === q.answer;
-    return `<div class="res"><div>${ok ? '✅' : '❌'} <b>${i + 1}.</b> ${esc(q.question).replace('_____', '<b>_____</b>')}</div>` +
+    return `<div class="res"><div>${ok ? '✅' : '❌'} <b>${i + 1}.</b> ${esc(q.question).replace(/_____/g, '<b>_____</b>')}</div>` +
       (ok ? `<div class="muted">Tu respuesta: ${esc(q.answerText)}</div>` :
-        `<div class="muted">Tu respuesta: <s>${esc(q.options[S.answers[i]] ?? '—')}</s> · Correcta: <b style="color:#4ade80">${esc(q.answerText)}</b></div>`) +
+        `<div class="muted">Tu respuesta: <s>${esc(q.options[S.answers[i]] ?? '—')}</s> · Correcta: <b style="color:#16a34a">${esc(q.answerText)}</b></div>`) +
       `<div class="src">📖 De tus apuntes: «${esc(q.source)}»</div></div>`;
   }).join('');
   $('bReview').disabled = !g.wrong.length;
@@ -184,7 +185,7 @@ function fmt(t) { return new Date(t).toLocaleString('es-ES', { day: '2-digit', m
 function renderLists() {
   const docs = store.get('ep_docs', []), h = store.get('ep_results', []);
   $('docs').innerHTML = docs.length ? docs.map(d => `<div class="item"><div><b>${esc(d.title)}</b><span class="muted">${fmt(d.date)} · ${(d.text.match(/\S+/g) || []).length} palabras</span></div><span><button class="btn small pri" data-open="${d.id}">Estudiar</button> <button class="btn small" data-edit="${d.id}">✏️</button> <button class="btn small" data-del="${d.id}">🗑</button></span></div>`).join('') : 'Todavía no hay apuntes guardados.';
-  $('hist').innerHTML = h.length ? h.slice(0, 12).map((r, i) => `<div class="item"><div><b>${esc(r.title)}</b><span class="muted">${fmt(r.date)} · ${r.level === 'ninos' ? 'Niños' : 'Adultos'}${r.mode === 'review' ? ' · repaso' : ''}</span></div><span><b style="color:${r.ok / r.total >= .5 ? '#4ade80' : '#f87171'}">${r.ok}/${r.total}</b>${r.wrong && r.wrong.length ? ` <button class="btn small warn" data-rev="${i}">🔁</button>` : ''}</span></div>`).join('') : 'Todavía no has hecho ningún test.';
+  $('hist').innerHTML = h.length ? h.slice(0, 12).map((r, i) => `<div class="item"><div><b>${esc(r.title)}</b><span class="muted">${fmt(r.date)} · ${r.level === 'ninos' ? 'Niños' : 'Adultos'}${r.mode === 'review' ? ' · repaso' : ''}</span></div><span><b style="color:${r.ok / r.total >= .5 ? '#16a34a' : '#dc2626'}">${r.ok}/${r.total}</b>${r.wrong && r.wrong.length ? ` <button class="btn small warn" data-rev="${i}">🔁</button>` : ''}</span></div>`).join('') : 'Todavía no has hecho ningún test.';
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openDoc(docs.find(d => d.id === b.dataset.open)));
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const d = docs.find(x => x.id === b.dataset.edit); $('title').value = d.title; $('text').value = d.text; updCount(); scrollTo(0, 0); });
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (confirm('¿Borrar estos apuntes?')) { store.set('ep_docs', docs.filter(d => d.id !== b.dataset.del)); renderLists(); } });
