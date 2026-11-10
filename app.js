@@ -1,5 +1,6 @@
 /* Estudia Pro by Julián Lenis — app */
 'use strict';
+const isMC = q => !!q && Array.isArray(q.options) && q.options.length === 3 && q.answer >= 0 && q.answer < 3 && !/_{2,}|^\s*(completa|rellena)\b|palabra falta/i.test(String(q.question || ''));
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const LIBS = {
@@ -357,6 +358,9 @@ $('bBack1').onclick = () => { show('home'); renderLists(); paintAiBadge(); };
 
 // ---------- test ----------
 function startTest(qs, mode) {
+  // Solo test clásico A/B/C: descarta preguntas antiguas con huecos o con 4 opciones
+  qs = (qs || []).filter(isMC);
+  if (!qs.length) return alert('No hay preguntas tipo test (A, B, C) para mostrar. Crea un test nuevo.');
   S.qs = qs; S.mode = mode;
   S.answers = new Array(qs.length).fill(null);
   S.revealed = new Array(qs.length).fill(false);
@@ -368,8 +372,7 @@ function renderQ() {
   $('tPos').textContent = `Pregunta ${S.pos + 1} de ${S.qs.length}`;
   $('tMode').textContent = S.mode === 'review' ? '🔁 Repaso de fallos' : (S.ai ? '✨ IA' : (level === 'ninos' ? '🧒 ¡Tú puedes!' : '🎓 Adultos'));
   $('tBar').style.width = ((S.pos + 1) / S.qs.length * 100) + '%';
-  const qHtml = esc(q.question).replace(/_____/g, '<b>_____</b>');
-  $('tQ').innerHTML = q.kind === 'cloze' && !/^Completa:/i.test(q.question) ? ('¿Qué palabra falta?<br>' + qHtml) : qHtml;
+  $('tQ').textContent = q.question;
   $('tOpts').innerHTML = q.options.map((o, i) => {
     let cls = 'opt';
     if (S.answers[S.pos] === i) cls += ' sel';
@@ -377,7 +380,7 @@ function renderQ() {
       if (i === q.answer) cls += ' good';
       else if (S.answers[S.pos] === i) cls += ' bad';
     }
-    return `<button class="${cls}" data-i="${i}" ${revealed ? 'disabled' : ''}><b>${'ABCD'[i]}</b> · ${esc(o)}</button>`;
+    return `<button class="${cls}" data-i="${i}" ${revealed ? 'disabled' : ''}><b>${'ABC'[i]}</b> · ${esc(String(o).charAt(0).toLocaleUpperCase('es') + String(o).slice(1))}</button>`;
   }).join('');
   for (const b of $('tOpts').children) b.onclick = () => {
     if (S.revealed[S.pos]) return;
@@ -413,7 +416,7 @@ function finish() {
   $('rTxt').textContent = `Nota: ${String(nota).replace('.', ',')} de 10 · ${g.pct}% ` + (g.pct === 100 ? '🏆 ¡Perfecto!' : g.pct >= 70 ? '👏 ¡Muy bien!' : g.pct >= 50 ? '👍 Aprobado' : '💪 Repasa y vuelve a intentarlo') + (S.ai ? ' · ✨ IA' : '');
   $('rList').innerHTML = S.qs.map((q, i) => {
     const ok = S.answers[i] === q.answer;
-    return `<div class="res"><div>${ok ? '✅' : '❌'} <b>${i + 1}.</b> ${esc(q.question).replace(/_____/g, '<b>_____</b>')}</div>` +
+    return `<div class="res"><div>${ok ? '✅' : '❌'} <b>${i + 1}.</b> ${esc(q.question)}</div>` +
       (ok ? `<div class="muted">Tu respuesta: ${esc(q.answerText)}</div>` :
         `<div class="muted">Tu respuesta: <s>${esc(q.options[S.answers[i]] ?? '—')}</s> · Correcta: <b style="color:#16a34a">${esc(q.answerText)}</b></div>`) +
       (q.explanation ? `<div class="src">💡 ${esc(q.explanation)}</div>` : '') +

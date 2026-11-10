@@ -29,9 +29,9 @@
         items: {
           type: 'OBJECT',
           properties: {
-            question: { type: 'STRING' },
-            options: { type: 'ARRAY', items: { type: 'STRING' } },
-            correct: { type: 'INTEGER' },
+            question: { type: 'STRING', description: 'Pregunta o enunciado completo, sin huecos ni rayas' },
+            options: { type: 'ARRAY', items: { type: 'STRING' }, minItems: 3, maxItems: 3, description: 'Exactamente 3 opciones (A, B, C), sin la letra delante' },
+            correct: { type: 'INTEGER', description: 'Índice 0, 1 o 2 de la única opción correcta' },
             explanation: { type: 'STRING' },
             source: { type: 'STRING' }
           },
@@ -117,6 +117,23 @@
     return joined;
   }
 
+  // Solo test clásico: enunciado completo + exactamente 3 opciones (A, B, C), una correcta.
+  const N_OPTS = 3;
+  const BAD_STEM = /_{2,}|\.{4,}|…\s*[?.]?\s*$|\[\s*\]|\(\s*\)|\b(completa|completar|rellena|rellenar|hueco|huecos|espacio en blanco|palabra que falta|qu[eé] palabra falta|fill in|blank)\b/i;
+  const stripLetter = o => String(o || '').replace(/^\s*(?:[A-Da-d]|[1-4])\s*[).:\-–]\s+/, '').trim();
+  const wc = s => (String(s).match(/[\p{L}\p{N}]+/gu) || []).length;
+
+  function isClassicQuestion(question, options) {
+    if (!question || question.length < 8 || BAD_STEM.test(question)) return false;
+    if (!Array.isArray(options) || options.length !== N_OPTS) return false;
+    if (options.some(o => !o || /_{2,}/.test(o))) return false;
+    const ns = options.map(wc);
+    const mn = Math.min(...ns), mx = Math.max(...ns);
+    if (mn === 0) return false;
+    if (mn <= 2 && mx >= 7) return false; // mezcla de palabra suelta con frase larga
+    return true;
+  }
+
   function validateQuestions(data, want) {
     if (!data || typeof data !== 'object') return { summary: [], questions: [] };
     const summary = Array.isArray(data.summary)
@@ -127,23 +144,16 @@
     const seenQ = new Set();
     for (const item of raw) {
       if (!item || typeof item !== 'object') continue;
-      let options = Array.isArray(item.options) ? item.options.map(o => String(o || '').trim()).filter(Boolean) : [];
-      // dedupe options case-insensitive keeping first
-      const uniq = []; const seenO = new Set();
-      for (const o of options) {
-        const k = o.toLocaleLowerCase('es');
-        if (seenO.has(k)) continue;
-        seenO.add(k); uniq.push(o);
-      }
-      options = uniq;
-      if (options.length !== 4) continue;
+      const options = Array.isArray(item.options) ? item.options.map(stripLetter) : [];
+      if (options.length !== N_OPTS || options.some(o => !o)) continue;
+      if (new Set(options.map(qNorm)).size !== N_OPTS) continue;
       let correct = item.correct;
-      if (typeof correct === 'string' && /^[A-Da-d]$/.test(correct)) correct = correct.toUpperCase().charCodeAt(0) - 65;
+      if (typeof correct === 'string' && /^\s*[A-Ca-c]\s*$/.test(correct)) correct = correct.trim().toUpperCase().charCodeAt(0) - 65;
       correct = +correct;
-      if (!Number.isInteger(correct) || correct < 0 || correct > 3) continue;
-      const question = String(item.question || '').trim();
-      if (question.length < 8) continue;
-      const qk = question.toLocaleLowerCase('es');
+      if (!Number.isInteger(correct) || correct < 0 || correct >= N_OPTS) continue;
+      const question = String(item.question || '').trim().replace(/\s+/g, ' ');
+      if (!isClassicQuestion(question, options)) continue;
+      const qk = qNorm(question);
       if (seenQ.has(qk)) continue;
       seenQ.add(qk);
       const explanation = String(item.explanation || '').trim();
@@ -194,11 +204,18 @@
       : '- summary: array vacío [] (el resumen ya se pidió antes).\n';
     return `Eres un profesor que crea tests de estudio en español a partir de apuntes.
 ${lvl}
-Crea exactamente ${n} preguntas tipo test (4 opciones, UNA sola correcta) sobre LO MÁS IMPORTANTE del material (definiciones, fechas, causas, procesos, datos clave).
-${focus}${avoidBlock}Reglas:
+Crea exactamente ${n} preguntas tipo test de opción múltiple clásica sobre LO MÁS IMPORTANTE del material (definiciones, fechas, causas, procesos, datos clave).
+${focus}${avoidBlock}Formato OBLIGATORIO de cada pregunta:
+- Una pregunta o enunciado COMPLETO y con sentido por sí mismo (por ejemplo «¿Qué es la fotosíntesis?» o «¿En qué año llegó Colón a América?»).
+- PROHIBIDO rellenar huecos: nada de «_____», rayas, puntos suspensivos, «Completa», «Rellena el espacio» ni «¿Qué palabra falta?».
+- Exactamente 3 opciones (A, B y C), escritas sin la letra delante. NUNCA 4.
+- Solo UNA opción es correcta; las otras 2 son claramente incorrectas según el material pero plausibles.
+- Las 3 opciones son del mismo tipo de respuesta (3 años, 3 personas, 3 procesos, 3 definiciones…), de longitud parecida, y encajan gramaticalmente con la pregunta.
+- Opciones claras y completas: nada de palabras sueltas sin sentido ni fragmentos cortados.
+Reglas:
 - Preguntas claras, sin errores de ortografía ni gramática.
-- Las 4 opciones deben ser distintas, plausibles y de longitud similar; nunca dos iguales.
-- correct = índice 0..3 de la opción correcta.
+- Las 3 opciones deben ser distintas; nunca dos iguales.
+- correct = índice 0, 1 o 2 de la opción correcta (0 = A, 1 = B, 2 = C).
 - explanation: 1 frase corta que explique por qué es correcta.
 ${sumRule}- No inventes datos que no estén en el material.
 - Prefiere variedad: no hagas varias preguntas casi iguales.
@@ -290,7 +307,7 @@ Responde SOLO con el JSON pedido.`;
         throw e;
       }
       report(parsed.questions.length);
-      return { summary: parsed.summary, questions: parsed.questions.map((q, i) => (q.id = i + 1, q)), partial: false };
+      return { summary: parsed.summary, questions: parsed.questions.map((q, i) => (q.id = i + 1, q)), partial: parsed.questions.length < want, requested: want };
     }
 
     const batches = Math.ceil(want / BATCH_SIZE);
@@ -398,7 +415,7 @@ Responde SOLO con el JSON pedido.`;
   return {
     MODEL, SCHEMA, KEY_LS,
     getKey, setKey, clearKey, hasKey,
-    spanishError, callGemini, parseResponse, validateQuestions,
+    spanishError, callGemini, parseResponse, validateQuestions, isClassicQuestion, N_OPTS,
     generate, generateOne, testKey, blobToInline, buildPrompt,
     splitTextChunks, mergeQuestions, BATCH_SIZE, MIN_GAP_MS, MAX_QUESTIONS
   };

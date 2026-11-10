@@ -10,7 +10,7 @@
   const ABBR = ['Sr','Sra','Srta','Dr','Dra','etc','pág','págs','p','pp','ej','aprox','núm','vol','cap','Ud','Uds','Avda','art','fig','a','d','C','S','km','kg','cm','mm','min','máx','mín','EE','UU'];
   const ROMAN = /^(?=[MDCLXVI])M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/;
   const W = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
-  // términos demasiado genéricos para huecos / respuestas
+  // términos demasiado genéricos para respuestas
   const WEAK = new Set(['proceso','parte','forma','manera','tipo','tipos','cosa','cosas','ejemplo','efecto','causa','resultado','número','lugar','persona','personas','tiempo','año','años','día','días','vez','veces','caso','casos','serie','grupo','nivel','sistema','acción','acciones','elemento','elementos','factor','factores','aspecto','aspectos','punto','puntos','dato','datos','información','texto','página','páginas','capítulo','tema','temas','nombre','nombres','palabra','palabras','frase','frases','idea','ideas','hecho','hechos','modo','modos','sentido','razón','razones','uso','usos','base','bases','medio','medios','fin','fines','paso','pasos','valor','valores','cantidad','función','funciones','relación','relaciones','cambio','cambios','estado','estados','periodo','período','época','siglo','siglos','mundo','tierra','agua','aire','sol','vida','cuerpo','hombre','mujer','niño','niña','gente','país','países','ciudad','ciudades','región','regiones','propio','propia','propios','propias','mismo','misma','otros','otras','todo','toda','varios','varias','algunos','algunas','mucho','mucha','poco','poca','nuevo','nueva','gran','grande','mayor','menor','mejor','peor','único','unica','único','primero','primera','segundo','segunda']);
 
   function rng(seed) { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
@@ -152,11 +152,12 @@
         }
         const ptxt = s.slice(t.i, toks[j].e);
         if (ROMAN.test(ptxt) || ptxt.length < 3) { k = j; continue; }
-        res.push({ text: ptxt, i: t.i, e: toks[j].e, nw: j - k + 1, type: 'prop', w: 2.6 + (freq.get(l) || 0) * 0.15 });
+        const ctx = DETS.has(prev) ? 'det:' + prev : (/^(a|en|desde|hasta|hacia)$/.test(prev) ? 'loc' : prev === 'de' ? 'de' : (/^\p{Ll}/u.test(toks[k - 1].w) && !STOP.has(prev) ? 'mod' : 'subj'));
+        res.push({ text: ptxt, i: t.i, e: toks[j].e, nw: j - k + 1, type: 'prop', w: 2.6 + (freq.get(l) || 0) * 0.15, ctx });
         k = j; continue;
       }
       if (DETS.has(prev) && /^\p{Ll}/u.test(w) && l.length >= 5 && !STOP.has(l) && !WEAK.has(l) && !/(mente|ando|iendo|ado|ido|aba|ían|aron)$/.test(l)) {
-        res.push({ text: w, i: t.i, e: t.e, type: 'term', w: 1.2 + (freq.get(l) || 0) * 1.1, det: prev, g: GENDER[prev] || '', plural: /s$/.test(l) });
+        res.push({ text: w, i: t.i, e: t.e, type: 'term', w: 1.2 + (freq.get(l) || 0) * 1.1, det: prev, g: GENDER[prev] || '', plural: /^(los|las|unos|unas|estos|estas|esos|esas|sus|nuestros|nuestras)$/.test(prev) || (!/^(el|la|un|una|del|al|este|esta|ese|esa|su|nuestro|nuestra|cada|aquel|aquella)$/.test(prev) && /s$/.test(l)) });
       }
     }
     return res;
@@ -196,8 +197,7 @@
     if (m && !WEAK.has(low(m[2]))) {
       let ctx = m[1].replace(/[.!?]$/, '').trim();
       ctx = ctx.replace(/^(cuando|si|al|tras|después de)\s+/i, '');
-      if (ctx.length > 95) ctx = ctx.slice(0, 92).replace(/\s+\S*$/, '') + '…';
-      if (ctx.length >= 18) {
+      if (ctx.length >= 18 && ctx.length <= 120) {
         return { question: ensureQ('Cómo se llama el proceso en el que ' + low(ctx)), answer: low(m[2]), type: 'def', source: s, kind: 'natural' };
       }
     }
@@ -206,7 +206,7 @@
     m = s.match(/^(.+?),\s*lo que se conoce como\s+(?:la|el)?\s*([A-Za-zÁÉÍÓÚáéíóúÑñ][\wÁÉÍÓÚáéíóúñ\-]{3,})/i);
     if (m && !WEAK.has(low(m[2]))) {
       let ctx = m[1].replace(/[.!?]$/, '').trim();
-      if (ctx.length > 90) ctx = ctx.slice(0, 87).replace(/\s+\S*$/, '') + '…';
+      if (ctx.length > 120) return null;
       return { question: ensureQ('Cómo se llama el hecho de que ' + low(ctx)), answer: low(m[2]), type: 'def', source: s, kind: 'natural' };
     }
 
@@ -224,10 +224,10 @@
           let ans = pred;
           // "el proceso por el cual X" → respuesta X (más clara)
           const porElCual = pred.match(/^(?:el|la|los|las|un|una)\s+(?:proceso|fenómeno|mecanismo)\s+(?:por el cual|mediante el cual|que)\s+(.+)/i);
-          if (porElCual) ans = porElCual[1];
+          if (porElCual) ans = pred;
           else {
             // "el pigmento verde…" → deja el sintagma nominal completo
-            ans = pred.replace(/^(el|la|los|las|un|una)\s+/i, '');
+            ans = pred;
           }
           if (ans.length > 85) ans = ans.slice(0, 82).replace(/\s+\S*$/, '') + '…';
           ans = ans.charAt(0).toLocaleLowerCase('es') + ans.slice(1);
@@ -284,53 +284,74 @@
     return null;
   }
 
-  function makeCloze(x, c, uniq, r) {
+  // ----- Solo preguntas tipo test clásicas: enunciado completo + 3 opciones (A, B, C) -----
+  const N_OPTS = 3;
+  const PROC = /(ción|sión|sis|miento|aje|ismo)$/i;
+  const wc = s => (String(s).match(W) || []).length;
+  const BAD_STEM = /_{2,}|\.{4,}|…\s*\?|\b(completa|rellena|rellenar|hueco|espacio en blanco|palabra que falta|qu[eé] palabra falta)\b/i;
+
+  // Comprueba que una pregunta es de opción múltiple clásica (nada de huecos)
+  function isClassicMC(q) {
+    if (!q || typeof q.question !== 'string') return false;
+    const stem = q.question.trim();
+    if (stem.length < 10 || BAD_STEM.test(stem)) return false;
+    if (!/[?？.]$/.test(stem)) return false;
+    if (!Array.isArray(q.options) || q.options.length !== N_OPTS) return false;
+    const opts = q.options.map(o => String(o || '').trim());
+    if (opts.some(o => !o || o.length < 2 || /_{2,}|…$/.test(o))) return false;
+    if (new Set(opts.map(norm)).size !== N_OPTS) return false;
+    if (!(q.answer >= 0 && q.answer < N_OPTS)) return false;
+    if (norm(opts[q.answer]) !== norm(q.answerText)) return false;
+    // mismo tipo de respuesta: longitudes comparables (evita mezclar frases con palabras sueltas)
+    const ns = opts.map(wc);
+    const mn = Math.min(...ns), mx = Math.max(...ns);
+    if (mn <= 2 && mx >= 5) return false;
+    if (mx > 3 * Math.max(mn, 1) + 2) return false;
+    // años con años, números con números
+    const isNum = o => /^\d/.test(o);
+    if (opts.some(isNum) && !opts.every(isNum)) return false;
+    return true;
+  }
+
+  // Afirmación verdadera vs. dos versiones falsas (cambia un dato por otro del mismo tipo)
+  const STEMS_AD = ['Según los apuntes, ¿cuál de estas afirmaciones es correcta?', '¿Cuál de estas afirmaciones es verdadera?', 'De acuerdo con el texto, ¿qué afirmación es cierta?', '¿Qué afirmación coincide con lo que dicen los apuntes?'];
+  const STEMS_NI = ['¿Qué frase es verdad?', '¿Cuál de estas frases es correcta?', 'Según lo que has leído, ¿qué frase es verdad?'];
+  function makeStatement(x, c, ds, r, level, k, allNorm) {
+    const base = x.s.replace(/\s+/g, ' ').trim();
     const fix = d => c.type === 'term' ? low(d) : d;
-    const answer = c.type === 'term' ? low(c.text) : c.text;
-    const options = shuffle([answer, ...uniq.map(fix)], r);
-    // limpia el hueco: capitaliza inicio de frase
-    let before = x.s.slice(0, c.i);
-    let after = x.s.slice(c.e);
-    // si el hueco era el inicio, no dejes minúscula rara
-    const blank = before + '_____' + after;
-    let q = blank;
-    // si la frase es larga, intenta acortar pregunta cloze a contexto útil
-    if ((blank.match(W) || []).length > 28) {
-      // recorta a ~22 palabras alrededor del hueco
-      const left = before.trim().split(/\s+/);
-      const right = after.trim().split(/\s+/);
-      const L = left.slice(-10).join(' ');
-      const R = right.slice(0, 10).join(' ');
-      q = (L ? L + ' ' : '') + '_____' + (R ? ' ' + R : '');
-      if (!/[.!?]$/.test(q)) q = q.replace(/[,:;]\s*$/, '') + (after.match(/[.!?]/) ? after.match(/[.!?]/)[0] : '.');
+    const build = d => ensurePeriod(x.s.slice(0, c.i) + d + x.s.slice(c.e));
+    const truth = ensurePeriod(base);
+    const falses = [];
+    for (const d of ds) {
+      const f = build(fix(d));
+      const fk = norm(f);
+      if (fk === norm(truth) || allNorm.has(fk) || falses.some(z => norm(z) === fk)) continue;
+      falses.push(f);
+      if (falses.length === N_OPTS - 1) break;
     }
-    q = q.replace(/\s+/g, ' ').trim();
-    q = 'Completa: ' + q;
+    if (falses.length < N_OPTS - 1) return null;
+    const options = shuffle([truth, ...falses], r);
+    const stems = level === 'ninos' ? STEMS_NI : STEMS_AD;
     return {
-      question: q,
+      question: stems[k % stems.length],
       options,
-      answer: options.indexOf(answer),
-      answerText: answer,
+      answer: options.indexOf(truth),
+      answerText: truth,
       source: x.s,
       type: c.type,
-      kind: 'cloze',
+      kind: 'statement',
       sentenceIndex: x.i
     };
   }
 
-  function pickDistractors(c, bank, x, r, level, forbid) {
+  function pickDistractors(c, bank, x, r, level, forbid, strict) {
     const key = norm(c.text);
     const banned = new Set([key, ...(forbid || []).map(norm)]);
     let ds;
     if (c.type === 'year' || c.type === 'num') {
       ds = [...bank[c.type].values()].filter(d => norm(d.text) !== key && (c.type === 'year' || d.unit === c.unit)).map(d => d.text).concat(numDistractors(c, r));
     } else if (c.type === 'roman') ds = romanDistractors(c);
-    else if (c.type === 'def') {
-      // distractores: otros términos de definición / términos del texto
-      ds = [...bank.term.values(), ...bank.prop.values(), ...bank.def.values()]
-        .filter(d => norm(d.text) !== key && Math.abs(d.text.length - c.text.length) < 18)
-        .map(d => d.text);
-    } else {
+    else {
       let cand = [...bank[c.type].values()].filter(d =>
         norm(d.text) !== key &&
         sameForm(c, d) &&
@@ -339,23 +360,29 @@
         !key.includes(norm(d.text)) &&
         !WEAK.has(low(d.text))
       );
-      if (level === 'ninos') cand.sort((a, b) => Math.abs(a.text.length - c.text.length) - Math.abs(b.text.length - c.text.length) + (r() - 0.5) * 3);
-      else cand.sort((a, b) => Math.abs(a.text.length - c.text.length) - Math.abs(b.text.length - c.text.length) + (r() - 0.5) * 3 + (b.w - a.w) * 0.2);
+      // términos tipo proceso (-ción, -sión…) solo con otros del mismo tipo
+      if (c.type === 'term') cand = cand.filter(d => PROC.test(d.text) === PROC.test(c.text));
+      if (strict && c.type === 'term') cand = cand.filter(d => (d.g || '') === (c.g || '') && d.plural === c.plural);
+      if (strict && c.type === 'prop') {
+        if (c.ctx === 'mod') return [];
+        const ctxs = new Map();
+        for (const { cs } of bank._all) for (const z of cs) if (z.type === 'prop') { const kk = norm(z.text); if (!ctxs.has(kk)) ctxs.set(kk, new Set()); ctxs.get(kk).add(z.ctx); }
+        cand = cand.filter(d => (ctxs.get(norm(d.text)) || new Set()).has(c.ctx));
+      }
+      cand.sort((a, b) => Math.abs(a.text.length - c.text.length) - Math.abs(b.text.length - c.text.length) + (r() - 0.5) * 3 + (level === 'ninos' ? 0 : (b.w - a.w) * 0.2));
       const g = cand.filter(d => sameGender(c, d));
-      ds = (g.length >= 3 ? g : cand).map(d => d.text);
+      ds = (strict || g.length >= N_OPTS - 1 ? g : cand).map(d => d.text);
     }
     const uniq = []; const seen = new Set(banned);
     for (const d of ds) {
       const raw = String(d).trim();
       if (!raw) continue;
       const k = norm(raw);
-      if (seen.has(k) || banned.has(k)) continue;
-      // evita distractores demasiado cortos o débiles
+      if (seen.has(k)) continue;
       if (raw.length < 3 || WEAK.has(low(raw))) continue;
       seen.add(k);
-      if (c.type === 'term' || (c.type === 'def' && !/[A-ZÁÉÍÓÚ]/.test(c.text[0]))) uniq.push(low(raw));
-      else uniq.push(raw);
-      if (uniq.length === 3) break;
+      uniq.push(c.type === 'term' ? low(raw) : raw);
+      if (uniq.length >= 6) break;
     }
     return uniq;
   }
@@ -370,164 +397,119 @@
     if (max < 1) max = 1;
     const scored = scoreSentences(sents, freq, level);
     const all = scored.map(x => ({ x, cs: candidates(x.s, freq) }));
-    const bank = { prop: new Map(), term: new Map(), year: new Map(), num: new Map(), roman: new Map(), def: new Map() };
+    const bank = { prop: new Map(), term: new Map(), year: new Map(), num: new Map(), roman: new Map() };
     for (const { cs } of all) for (const c of cs) {
       const k = norm(c.text);
       if (!bank[c.type].has(k)) bank[c.type].set(k, c);
     }
+    bank._all = all;
+    const allNorm = new Set(sents.map(s => norm(ensurePeriod(s))));
 
     const usedAns = new Set();
     const usedSrc = new Set();
     const usedQ = new Set();
     const qs = [];
+    const push = q => {
+      if (!isClassicMC(q)) return false;
+      const qk = norm(q.question) + '|' + norm(q.answerText);
+      if (usedQ.has(qk)) return false;
+      usedQ.add(qk); qs.push(q); return true;
+    };
 
-    // 1) Prioriza preguntas naturales sobre frases más importantes
     const order = all
       .filter(a => (level !== 'ninos' || a.x.n <= 28) && a.x.n >= 5)
       .sort((a, b) => b.x.sc - a.x.sc);
 
-    for (const { x } of order) {
+    // Banco de respuestas naturales (para distractores del mismo tipo)
+    const nats = order.map(o => ({ o, n: naturalQuestion(o.x.s, freq, r) })).filter(z => z.n);
+    const defLong = nats.filter(z => z.n.type === 'def' && z.n.long).map(z => z.n.answer);
+    const shortAns = nats.filter(z => z.n.type !== 'year' && !z.n.long && wc(z.n.answer) <= 3).map(z => z.n.answer);
+
+    // 1) Preguntas naturales (¿Qué es…?, ¿En qué año…?, ¿Cómo se llama…?)
+    for (const { o: { x }, n: nat0 } of nats) {
       if (qs.length >= max) break;
       if (usedSrc.has(x.i)) continue;
-      const nat = naturalQuestion(x.s, freq, r);
-      if (!nat) continue;
+      const nat = Object.assign({}, nat0);
+      if (/…$/.test(nat.answer) || nat.answer.length > 85) continue;
       const ak = norm(nat.answer);
       if (usedAns.has(ak)) continue;
-      if (nat.long && nat.answer.length > 70) continue; // evita respuestas kilométricas
-      // construye distractores del mismo tipo
-      const fakeC = { text: nat.answer, type: nat.type === 'year' ? 'year' : (nat.type === 'def' ? 'def' : 'term'), w: 3, unit: '', plural: /s$/i.test(nat.answer), nw: nat.answer.split(/\s+/).length };
-      if (nat.type === 'def' && !bank.def.has(ak)) bank.def.set(ak, fakeC);
-      const forbid = (nat.question.match(W) || []).concat((nat.source.match(W) || []).slice(0, 8));
-      let uniq = pickDistractors(fakeC, bank, x, r, level, forbid);
-      const forbidSet = new Set([ak, ...forbid.map(norm)]);
-      if (uniq.length < 3 && nat.type === 'def') {
-        const otherDefs = order.map(o => naturalQuestion(o.x.s, freq, r)).filter(n => n && n.type === 'def' && norm(n.answer) !== ak).map(n => n.answer);
-        for (const d of otherDefs) {
-          const k = norm(d);
-          if (forbidSet.has(k) || uniq.some(u => norm(u) === k)) continue;
-          if (nat.long && d.length < 18) continue;
-          if (!nat.long && d.length > 55) continue;
-          uniq.push(d.length > 70 ? d.slice(0, 67) + '…' : d);
-          if (uniq.length === 3) break;
-        }
+      const forbidSet = new Set([ak, ...(nat.question.match(W) || []).map(norm)]);
+      let ds = [];
+      const add = d => {
+        d = String(d || '').trim(); const k = norm(d);
+        if (!d || /…$/.test(d) || k === ak || forbidSet.has(k) || ds.some(u => norm(u) === k)) return;
+        if (normSafeIncludes(nat.question, d)) return;
+        ds.push(d);
+      };
+      if (nat.type === 'year') {
+        pickDistractors({ text: nat.answer, type: 'year', unit: '' }, bank, x, r, level, []).forEach(add);
+      } else if (nat.long) {
+        shuffle(defLong, r).forEach(add);
+        if (ds.length < N_OPTS - 1) swapVariants(nat.answer, bank, r).forEach(add);
+      } else {
+        const proc = PROC.test(nat.answer);
+        const pool = shortAns.concat([...bank.term.values()].map(d => d.text));
+        shuffle(pool, r).filter(d => wc(d) <= 3 && (!proc || PROC.test(d)) && !WEAK.has(low(d))).forEach(add);
+        if (ds.length < N_OPTS - 1 && proc) ['evaporación', 'oxidación', 'respiración', 'fermentación', 'combustión', 'sublimación'].forEach(add);
       }
-      // Frases importantes del texto como distractores de definición
-      if (uniq.length < 3 && nat.long) {
-        for (const o of order) {
-          if (o.x.i === x.i) continue;
-          let cand = o.x.s.replace(/[.!?]$/, '').trim();
-          // usa predicado tras es/son si existe
-          const mm = cand.match(/\s+(?:es|son)\s+(.+)$/i);
-          if (mm) cand = mm[1].replace(/^(el|la|los|las|un|una)\s+/i, '');
-          if (cand.length < 18 || cand.length > 90) continue;
-          const k = norm(cand);
-          if (forbidSet.has(k) || k === ak || uniq.some(u => norm(u) === k)) continue;
-          if (cand.toLocaleLowerCase('es').includes(low(nat.answer).slice(0, 12))) continue;
-          uniq.push(cand.charAt(0).toLocaleLowerCase('es') + cand.slice(1));
-          if (uniq.length === 3) break;
-        }
-      }
-      if (uniq.length < 3 && !nat.long) {
-        for (const d of [...bank.term.values(), ...bank.prop.values()]) {
-          const k = norm(d.text);
-          if (forbidSet.has(k) || k === ak || uniq.some(u => norm(u) === k) || WEAK.has(low(d.text))) continue;
-          uniq.push(d.text);
-          if (uniq.length === 3) break;
-        }
-      }
-      // último recurso: plantillas plausibles del mismo dominio (solo si aún faltan)
-      if (uniq.length < 3 && nat.type === 'def') {
-        const fillers = nat.long
-          ? ['un conjunto de normas sin relación con el tema', 'un fenómeno que no aparece en estos apuntes', 'una teoría descartada por los datos del texto']
-          : ['oxidación', 'respiración', 'fermentación', 'combustión', 'sublimación', 'fusión'];
-        for (const d of fillers) {
-          const k = norm(d);
-          if (forbidSet.has(k) || k === ak || uniq.some(u => norm(u) === k)) continue;
-          uniq.push(d);
-          if (uniq.length === 3) break;
-        }
-      }
-      if (uniq.length < 3) continue;
-      const answer = nat.type === 'year' || /[A-ZÁÉÍÓÚ]/.test(nat.answer[0]) ? nat.answer : low(nat.answer);
-      const options = shuffle([answer, ...uniq.slice(0, 3).map(d => (nat.type === 'year' ? d : (/[A-ZÁÉÍÓÚ]/.test(String(d)[0]) ? d : low(d))))], r);
-      // garantiza unicidad
-      if (new Set(options.map(norm)).size !== 4) continue;
-      const qtext = nat.question;
-      if (usedQ.has(norm(qtext))) continue;
-      qs.push({
-        id: qs.length + 1,
-        question: qtext,
-        options,
-        answer: options.findIndex(o => norm(o) === norm(answer)),
-        answerText: answer,
-        source: nat.source,
-        type: nat.type,
-        kind: 'natural',
-        sentenceIndex: x.i
-      });
-      usedAns.add(ak);
-      usedSrc.add(x.i);
-      usedQ.add(norm(qtext));
+      if (ds.length < N_OPTS - 1) continue;
+      ds = ds.slice(0, N_OPTS - 1);
+      let question = nat.question;
+      if (/^¿Mediante qué /.test(question) && PROC.test(nat.answer)) question = question.replace(/^¿Mediante qué /, '¿Mediante qué proceso ');
+      const lf = t => /^\p{Lu}\p{Ll}/u.test(t) && DETS.has(low(t.split(/\s+/)[0])) ? t.charAt(0).toLocaleLowerCase('es') + t.slice(1) : t;
+      const answer = nat.type === 'year' ? nat.answer : lf(nat.answer);
+      const options = shuffle([answer, ...ds.map(d => nat.type === 'year' ? d : lf(d))], r);
+      const q = { question, options, answer: options.findIndex(o => norm(o) === norm(answer)), answerText: answer, source: nat.source, type: nat.type, kind: 'natural', sentenceIndex: x.i };
+      if (push(q)) { usedAns.add(ak); usedSrc.add(x.i); }
     }
 
-    // 2) Completa con cloze de calidad sobre frases restantes
-    for (const { x, cs } of order) {
-      if (qs.length >= max) break;
-      if (usedSrc.has(x.i)) continue;
-      const pool = cs
-        .filter(c => !usedAns.has(norm(c.text)) && !WEAK.has(low(c.text.split(/\s+/).pop())))
-        .sort((a, b) => b.w - a.w + (r() - 0.5) * 0.4);
-      for (const c of pool) {
-        const key = norm(c.text);
-        const rest = norm(x.s.slice(0, c.i) + ' ' + x.s.slice(c.e));
-        if (new RegExp('(^|[^\\p{L}])' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^\\p{L}]|$)', 'u').test(rest)) continue;
-        const uniq = pickDistractors(c, bank, x, r, level);
-        if (uniq.length < 3) continue;
-        const q = makeCloze(x, c, uniq, r);
-        if (q.answer < 0) continue;
-        if (new Set(q.options.map(norm)).size !== 4) continue;
-        if (usedQ.has(norm(q.question))) continue;
-        qs.push(q);
-        usedAns.add(key);
-        usedSrc.add(x.i);
-        usedQ.add(norm(q.question));
-        break;
-      }
-    }
-
-    // 3) Relleno: más cloze si faltan preguntas (textos cortos)
-    if (qs.length < max) {
+    // 2) Afirmaciones: una verdadera (frase de los apuntes) y dos falsas con un dato cambiado
+    let k = 0;
+    for (const pass of [0]) {
       for (const { x, cs } of order) {
         if (qs.length >= max) break;
+        if (pass === 0 && usedSrc.has(x.i)) continue;
+        if (x.n > (level === 'ninos' ? 22 : 30)) continue;
         const pool = cs
-          .filter(c => !usedAns.has(norm(c.text)) && !WEAK.has(low(c.text.split(/\s+/).pop())) && c.text.length >= 5)
-          .sort((a, b) => b.w - a.w);
+          .filter(c => !usedAns.has(norm(c.text)) && !WEAK.has(low(c.text.split(/\s+/).pop())))
+          .sort((a, b) => b.w - a.w + (r() - 0.5) * 0.4);
         for (const c of pool) {
           const key = norm(c.text);
           const rest = norm(x.s.slice(0, c.i) + ' ' + x.s.slice(c.e));
           if (new RegExp('(^|[^\\p{L}])' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^\\p{L}]|$)', 'u').test(rest)) continue;
-          const uniq = pickDistractors(c, bank, x, r, level, (x.s.match(W) || []).filter(w => norm(w) !== key).slice(0, 6));
-          if (uniq.length < 3) continue;
-          const q = makeCloze(x, c, uniq, r);
-          if (q.answer < 0 || new Set(q.options.map(norm)).size !== 4) continue;
-          if (usedQ.has(norm(q.question)) || usedAns.has(key)) continue;
-          qs.push(q); usedAns.add(key); usedQ.add(norm(q.question));
-          break;
+          const ds = pickDistractors(c, bank, x, r, level, [], true);
+          if (ds.length < N_OPTS - 1) continue;
+          const q = makeStatement(x, c, ds, r, level, k, allNorm);
+          if (!q) continue;
+          if (push(q)) { k++; usedAns.add(key); usedSrc.add(x.i); break; }
         }
       }
     }
 
-    // reasigna índices de respuesta por si acaso y ordena
     return qs
       .sort((a, b) => a.sentenceIndex - b.sentenceIndex)
       .map((q, i) => {
         q.id = i + 1;
-        if (q.answer < 0 || norm(q.options[q.answer]) !== norm(q.answerText)) {
-          q.answer = q.options.findIndex(o => norm(o) === norm(q.answerText));
-        }
+        q.answer = q.options.findIndex(o => norm(o) === norm(q.answerText));
         return q;
       })
-      .filter(q => q.answer >= 0 && q.options.length === 4);
+      .filter(isClassicMC);
+  }
+  // Versiones falsas de una definición: cambia un término por otro del mismo género/número
+  function swapVariants(str, bank, r) {
+    const out = [];
+    const cs = candidates(str, new Map()).filter(c => c.type === 'term');
+    for (const c of shuffle(cs, r)) {
+      const pool = shuffle([...bank.term.values()].filter(d =>
+        norm(d.text) !== norm(c.text) && !norm(str).includes(norm(d.text)) && !WEAK.has(low(d.text)) &&
+        (d.g || '') === (c.g || '') && d.plural === c.plural && PROC.test(d.text) === PROC.test(c.text)), r);
+      for (const d of pool.slice(0, 2)) out.push(str.slice(0, c.i) + low(d.text) + str.slice(c.e));
+    }
+    return out;
+  }
+  function normSafeIncludes(hay, needle) {
+    const n = norm(needle);
+    return n.length >= 4 && norm(hay).includes(n);
   }
 
   function reshuffle(q, seed) {
@@ -540,5 +522,5 @@
     qs.forEach((q, i) => { if (answers[i] === q.answer) ok++; else wrong.push({ q, chosen: answers[i] }); });
     return { ok, total: qs.length, pct: qs.length ? Math.round(ok * 100 / qs.length) : 0, wrong };
   }
-  return { clean, sentences, summarize, keywords, generate, grade, reshuffle, candidates, tf, naturalQuestion, scoreSentences };
+  return { clean, sentences, summarize, keywords, generate, grade, reshuffle, candidates, tf, naturalQuestion, scoreSentences, isClassicMC, N_OPTS };
 });
