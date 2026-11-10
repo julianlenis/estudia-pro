@@ -123,7 +123,7 @@
   const stripLetter = o => String(o || '').replace(/^\s*(?:[A-Da-d]|[1-4])\s*[).:\-–]\s+/, '').trim();
   const wc = s => (String(s).match(/[\p{L}\p{N}]+/gu) || []).length;
 
-  function isClassicQuestion(question, options) {
+  function isClassicQuestion(question, options, correct) {
     if (!question || question.length < 8 || BAD_STEM.test(question)) return false;
     if (!Array.isArray(options) || options.length !== N_OPTS) return false;
     if (options.some(o => !o || /_{2,}/.test(o))) return false;
@@ -135,7 +135,16 @@
     // las 3 opciones copiadas tal cual dentro del enunciado: no es una pregunta real
     const qn = qNorm(question);
     if (options.every(o => qn.includes(qNorm(o)))) return false;
+    // calidad compartida con el generador sin IA (gen.js): sin interrogativos/palabras funcionales
+    // como opción («Quins», «Com», «Què»), sin opciones copiadas del enunciado, sin respuesta ya dada
+    // en la pregunta ni «Com s'anomena la Unió Europea?», opciones del mismo tipo y longitud parecida
+    const G = genLib();
+    if (G && G.mcProblem && G.mcProblem(question, options, correct == null ? 0 : correct)) return false;
     return true;
+  }
+  function genLib() {
+    if (typeof EPGen !== 'undefined') return EPGen;
+    try { return typeof require === 'function' ? require('./gen.js') : null; } catch (_) { return null; }
   }
 
   function validateQuestions(data, want) {
@@ -156,7 +165,7 @@
       correct = +correct;
       if (!Number.isInteger(correct) || correct < 0 || correct >= N_OPTS) continue;
       const question = String(item.question || '').trim().replace(/\s+/g, ' ');
-      if (!isClassicQuestion(question, options)) continue;
+      if (!isClassicQuestion(question, options, correct)) continue;
       const qk = qNorm(question);
       if (seenQ.has(qk)) continue;
       seenQ.add(qk);
@@ -218,7 +227,12 @@ ${focus}${avoidBlock}Formato OBLIGATORIO de cada pregunta:
 - Las 3 opciones son del mismo tipo de respuesta (3 años, 3 personas, 3 procesos, 3 definiciones…), de longitud parecida, y encajan gramaticalmente con la pregunta.
 - Opciones claras y completas: nada de palabras sueltas sin sentido ni fragmentos cortados.
 - NO copies trozos sueltos de los apuntes como opciones (por ejemplo dos palabras con mayúscula pegadas de una línea y la siguiente). Cada opción debe ser una respuesta real y con sentido a la pregunta.
-- Ignora títulos y encabezados (por ejemplo «Repaso rápido para el examen»): pregunta sobre el contenido.
+- Ignora títulos y encabezados (por ejemplo «Repaso rápido para el examen») y las preguntas que ya vengan escritas en los apuntes como encabezado («Què és la Unió Europea?», «Quins països…?»): pregunta sobre el contenido.
+- PROHIBIDO usar como opción palabras interrogativas o funcionales: «què», «com», «quin», «quins», «quina», «qui», «quan», «on», «per què», «qué», «cómo», «cuál», «quién», «cuándo», «dónde», «por qué», artículos («el», «la», «els», «les», «un», «una»), «de», «i», «y», «o»… Cada opción es un nombre, término, fecha, lugar, cifra o definición real.
+- Ninguna opción puede ser una palabra copiada del enunciado, y la respuesta correcta NO puede aparecer ya en la pregunta.
+- PROHIBIDAS las preguntas que se responden solas o no enseñan nada, como «Com s'anomena la Unió Europea?» o «¿Cómo se llama España?». Si preguntas por un nombre, describe la cosa en el enunciado y pide el nombre: «Com s'anomena l'organització política i econòmica formada per 27 estats europeus?» → «La Unió Europea» / «El Consell d'Europa» / «L'OTAN».
+- Ejemplo MALO (nunca): «Com s'anomena la Unió Europea?» con opciones «Quins» / «Com» / «Què».
+- Ejemplo BUENO: «Quin any es va signar el Tractat de Roma?» → «1957» / «1992» / «2002».
 Reglas:
 - Preguntas claras, sin errores de ortografía ni gramática.
 - Las 3 opciones deben ser distintas; nunca dos iguales.
@@ -369,6 +383,20 @@ Responde SOLO con el JSON pedido.`;
         if (all.length) break; // conservar lo generado
         throw e;
       }
+    }
+
+    // Si el validador descartó preguntas mal formuladas en los lotes, pide una vez las que faltan
+    if (all.length && all.length < want && !lastErr) {
+      try {
+        await sleep(MIN_GAP_MS);
+        report(all.length);
+        const more = await generateOne({
+          text, images: [], level, count: Math.min(BATCH_SIZE, want - all.length), title, key,
+          avoid: all.map(q => q.question), needSummary: !summary.length, chunkLabel: '', temperature: 0.5
+        });
+        if (!summary.length && more.summary.length) summary = more.summary;
+        mergeQuestions(all, more.questions);
+      } catch (e) { /* conserva lo generado */ }
     }
 
     if (!all.length) {

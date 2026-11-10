@@ -14,7 +14,9 @@
   const ROMAN = /^(?=[MDCLXVI])M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/;
   const W = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
   // términos demasiado genéricos para huecos / respuestas
-  const WEAK = new Set(['proceso','parte','forma','manera','tipo','tipos','cosa','cosas','ejemplo','efecto','causa','resultado','número','lugar','persona','personas','tiempo','año','años','día','días','vez','veces','caso','casos','serie','grupo','nivel','sistema','acción','acciones','elemento','elementos','factor','factores','aspecto','aspectos','punto','puntos','dato','datos','información','texto','página','páginas','capítulo','tema','temas','nombre','nombres','palabra','palabras','frase','frases','idea','ideas','hecho','hechos','modo','modos','sentido','razón','razones','uso','usos','base','bases','medio','medios','fin','fines','paso','pasos','valor','valores','cantidad','función','funciones','relación','relaciones','cambio','cambios','estado','estados','periodo','período','época','siglo','siglos','mundo','tierra','agua','aire','sol','vida','cuerpo','hombre','mujer','niño','niña','gente','país','países','ciudad','ciudades','región','regiones','propio','propia','propios','propias','mismo','misma','otros','otras','todo','toda','varios','varias','algunos','algunas','mucho','mucha','poco','poca','nuevo','nueva','gran','grande','mayor','menor','mejor','peor','único','unica','único','primero','primera','segundo','segunda']);
+  const WEAK = new Set(['proceso','parte','forma','manera','tipo','tipos','cosa','cosas','ejemplo','efecto','causa','resultado','número','lugar','persona','personas','tiempo','año','años','día','días','vez','veces','caso','casos','serie','grupo','nivel','sistema','acción','acciones','elemento','elementos','factor','factores','aspecto','aspectos','punto','puntos','dato','datos','información','texto','página','páginas','capítulo','tema','temas','nombre','nombres','palabra','palabras','frase','frases','idea','ideas','hecho','hechos','modo','modos','sentido','razón','razones','uso','usos','base','bases','medio','medios','fin','fines','paso','pasos','valor','valores','cantidad','función','funciones','relación','relaciones','cambio','cambios','estado','estados','periodo','período','época','siglo','siglos','mundo','tierra','agua','aire','sol','vida','cuerpo','hombre','mujer','niño','niña','gente','país','países','ciudad','ciudades','región','regiones','propio','propia','propios','propias','mismo','misma','otros','otras','todo','toda','varios','varias','algunos','algunas','mucho','mucha','poco','poca','nuevo','nueva','gran','grande','mayor','menor','mejor','peor','único','unica','único','primero','primera','segundo','segunda',
+    // català
+    'països','país','ciutat','ciutats','persones','persona','gent','cosa','coses','part','parts','tipus','exemple','manera','forma','temps','any','anys','dia','dies','vegada','vegades','cas','casos','grup','grups','lloc','llocs','món','nom','noms','tema','temes','idea','idees','fet','fets','canvi','canvis','sistema','nivell','punt','punts']);
 
   function rng(seed) { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
   function shuffle(a, r) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
@@ -40,6 +42,56 @@
   };
   // Formato prohibido: huecos / rellenar espacios / «Completa:»
   const CLOZE_RE = /_{2,}|…\s*…|\.{4,}|\[\s*\]|\(\s*\)|^\s*(completa|completar|rellena|rellenar|omple|completeu|fill in|complete)\b|espacio en blanco|palabra que falta|paraula que falta/i;
+  // --- Calidad de las opciones (v8): nada de interrogativos ni palabras funcionales como respuesta ---
+  // Palabras que nunca pueden ser una respuesta por sí solas (català + castellano), ya normalizadas (sin acentos)
+  const FUNC = new Set(('que com como quin quina quins quines qui quien quienes quan quando cuando on onde donde ' +
+    'per perque porque por cual cuales quant quanta quants quantes cuanto cuanta cuantos cuantas ' +
+    'el la els les los las lo l un una uns unes unos unas de del dels d al als a i y o u e ni en amb con para pel pels ' +
+    'se es son ser era eren fue fueron no si ja ya mes mas menys menos molt muy tambe tambien pero ' +
+    'aixo allo esto eso aquello aquest aquesta aquests aquestes este esta estos estas ese esa esos esas ' +
+    'su sus seu seva seus seves mi tu nos hi ho li ha han hay cap algun alguna ningun ninguna tot tots tota totes todo todos').split(/\s+/));
+  // Palabras del «marco» de la pregunta (no aportan contenido)
+  const FRAME = new Set('anomena anomenen anomenat llama llaman llamado denomina nom nombre significa defineix define'.split(' '));
+  const toks = s => norm(String(s == null ? '' : s)).replace(/['’]/g, ' ').match(/[\p{L}\p{N}]+/gu) || [];
+  const phraseIn = (needle, hay) => { const n = needle.join(' '); return !!n && (' ' + hay.join(' ') + ' ').includes(' ' + n + ' '); };
+  // Motivo por el que una opción no vale ('' = vale)
+  function badOption(o, question) {
+    const raw = String(o == null ? '' : o).trim();
+    const t = toks(raw);
+    if (!t.length) return 'vacía';
+    if (t.every(w => FUNC.has(w))) return 'palabra funcional / interrogativo';
+    if (t.length === 1 && !/\d/.test(t[0]) && t[0].length < 3 && !/^\p{Lu}{2,}$/u.test(raw)) return 'demasiado corta';
+    // opción corta copiada tal cual del enunciado («Com» en «Com s'anomena…?»)
+    if (t.length <= 3 && phraseIn(t, toks(question))) return 'copiada del enunciado';
+    return '';
+  }
+  // «Com s'anomena la Unió Europea?» / «¿Cómo se llama España?»: el nombre ya está en la pregunta
+  const NAMING_RE = /^[¿¡]?\s*(?:com\s+s['’]anomen(?:a|en)|c[oó]mo\s+se\s+llama(?:n)?|qu[ií]n(?:a|s|es)?\s+(?:és|es|era)\s+el\s+nom\s+d(?:e\s+|['’])|cu[aá]l\s+es\s+el\s+nombre\s+de)\s*(.+?)\s*[?？]?$/i;
+  const WHAT_RE = /^[¿¡]?\s*(?:qu[eè]\s+(?:és|es|són|son))\s+(.+?)\s*[?？]?$/i;
+  const startsWithName = x => /^(?:(?:el|la|els|les|los|las|un|una|l['’])\s*)?\p{Lu}/u.test(String(x).trim());
+  // Motivo por el que una pregunta A/B/C no vale por calidad ('' = vale)
+  function mcProblem(question, options, answer) {
+    question = String(question || '').trim();
+    const qt = toks(question);
+    if (!qt.some(w => !FUNC.has(w) && !FRAME.has(w) && w.length >= 3)) return 'enunciado sin contenido';
+    for (const o of options) { const b = badOption(o, question); if (b) return 'opción «' + o + '»: ' + b; }
+    const ans = options[answer];
+    const at = toks(ans).filter(w => !FUNC.has(w));
+    if (at.length && at.join('').length >= 4 && phraseIn(toks(ans), qt)) return 'la respuesta ya está en el enunciado';
+    const nm = question.match(NAMING_RE);
+    if (nm && (startsWithName(nm[1]) || toks(nm[1]).filter(w => !FUNC.has(w)).length < 2)) return 'pregunta que se responde sola («Com s\'anomena X?»)';
+    const wm = question.match(WHAT_RE);
+    if (wm && options.some(o => toks(o).filter(w => !FUNC.has(w)).length < 1 || toks(o).length < 2) && !options.every(o => /^\p{Ll}/u.test(String(o).trim()))) return 'opciones que no definen («Què és X?»)';
+    // mismo tipo de respuesta: no mezclar números/años con palabras
+    const isNum = o => /^[\d\s.,%ºª°/-]+(?:\s*\p{L}{0,8})?$/u.test(String(o).trim()) && /\d/.test(o);
+    const nNum = options.filter(isNum).length;
+    if (nNum && nNum !== options.length) return 'opciones de tipo distinto';
+    // longitud parecida
+    const lens = options.map(o => String(o).trim().length), ws = options.map(o => toks(o).length);
+    if (Math.min(...ws) <= 2 && Math.max(...ws) >= 8) return 'longitudes muy distintas';
+    if (Math.max(...lens) > 5 * Math.min(...lens) && Math.min(...lens) < 12) return 'longitudes muy distintas';
+    return '';
+  }
   // Pregunta tipo test clásica válida: enunciado completo + 3 opciones (A, B, C), una correcta
   function isCleanMC(q) {
     if (!q || typeof q.question !== 'string') return false;
@@ -51,6 +103,7 @@
     if (new Set(opts.map(norm)).size !== 3) return false;
     if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer > 2) return false;
     if (q.answerText != null && norm(opts[q.answer]) !== norm(q.answerText)) return false;
+    if (mcProblem(question, opts, q.answer)) return false;
     return true;
   }
   const ensurePeriod = s => { s = s.trim().replace(/\s+/g, ' '); if (!/[.!?…]$/.test(s)) s += '.'; return capFirst(s); };
@@ -222,12 +275,17 @@
   }
 
   // Intenta convertir una frase importante en pregunta natural
+  // Frases que ya son preguntas o encabezados («Què és la Unió Europea?») no sirven de fuente
+  const isQuestionSentence = s => /[?？]\s*$/.test(String(s).trim()) || /^[¿]/.test(String(s).trim());
+  const badSubject = subj => { const t = toks(subj); return !t.length || FUNC.has(t[0]) && t.every(w => FUNC.has(w)) || /^(qu[eèé]|com|c[oó]mo|quin|quina|quins|quines|qui|qui[eé]n|quan|cu[aá]ndo|on|d[oó]nde|cu[aá]l|cu[aá]les|per\s+qu[eè]|por\s+qu[eé])\b/i.test(String(subj).trim()); };
   function naturalQuestionCa(s) {
+    if (isQuestionSentence(s)) return null;
     // Definició: «La fotosíntesi és …» / «Els rius són …»
     const m = s.match(/^((?:El|La|Els|Les|Un|Una)\s+[^.]{3,60}?|L['’][^.\s][^.]{2,58}?|[A-ZÀÈÉÍÏÒÓÚÜÇ][^.]{1,40}?)\s+(és|són)\s+(.+)$/);
     if (!m) return null;
     const subj = m[1].trim(), sw = subj.match(W) || [];
     let pred = m[3].trim().replace(/[.!?]$/, '');
+    if (badSubject(subj)) return null;
     if (sw.length < 1 || sw.length > 8 || pred.length < 12 || /^\d/.test(subj) || /^(Això|Allò|Aquest|Aquesta|Ell|Ella)$/i.test(subj)) return null;
     if (/^(molt|més|menys|important|necessari|possible|clau)\b/i.test(pred)) return null;
     let ans = pred.replace(/^(el|la|els|les|un|una)\s+/i, '').replace(/^l['’]/i, '');
@@ -238,6 +296,7 @@
 
   function naturalQuestion(s, freq, r, lang) {
     if (lang === 'ca') return naturalQuestionCa(s);
+    if (isQuestionSentence(s)) return null;
     const words = s.match(W) || [];
 
     // "Este proceso se llama X" / "se llama condensación"
@@ -266,7 +325,7 @@
       const subjWords = subjFull.match(W) || [];
       let pred = m[3].trim().replace(/[.!?]$/, '');
       // sujeto corto y predicado útil; evita frases que empiezan por adverbio/número
-      if (subjWords.length >= 1 && subjWords.length <= 8 && pred.length >= 12 && !/^(aprox|aproximadamente|\d)/i.test(subjFull) && !/^(Esto|Eso|Aquello|Él|Ella)$/i.test(subjFull)) {
+      if (!badSubject(subjFull) && subjWords.length >= 1 && subjWords.length <= 8 && pred.length >= 12 && !/^(aprox|aproximadamente|\d)/i.test(subjFull) && !/^(Esto|Eso|Aquello|Él|Ella)$/i.test(subjFull)) {
         // si predicado es "el proceso … se llama X" ya lo cubrimos arriba
         if (!/\bse\s+(llama|denomina|conoce como)\b/i.test(pred)) {
           const q = ensureQ((m[2].toLowerCase() === 'son' ? 'Qué son ' : 'Qué es ') + low(subjFull));
@@ -380,7 +439,7 @@
     const s = x.s.trim();
     const n = (s.match(W) || []).length;
     // solo frases completas (con punto final); descarta títulos/encabezados
-    if (!/[.!?…]$/.test(s) || n < 6 || n > (level === 'ninos' ? 22 : 32) || s.length > 220) return null;
+    if (!/[.!…]$/.test(s) || isQuestionSentence(s) || n < 6 || n > (level === 'ninos' ? 22 : 32) || s.length > 220) return null;
     if (/_/.test(s) || !/^[\p{Lu}¿¡"«(\d]/u.test(s)) return null;
     const esc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const occurs = t => (text.match(new RegExp(esc(t), 'g')) || []).length;
@@ -459,6 +518,7 @@
         const k = norm(d);
         if (!d || forbidSet.has(k) || k === ak || uniq.some(u => norm(u) === k)) return;
         if (ak.includes(k) || k.includes(ak)) return;
+        if (badOption(d, nat.question)) return; // nunca «Quins», «Com», «Què»…
         uniq.push(d);
       };
       if (nat.type === 'year') {
@@ -477,7 +537,7 @@
         if (uniq.length < 2 && !single && !isName(nat.answer)) {
           for (const o of order) {
             if (uniq.length >= 2) break;
-            if (o.x.i === x.i) continue;
+            if (o.x.i === x.i || isQuestionSentence(o.x.s)) continue;
             const mm = o.x.s.replace(/[.!?]$/, '').match(/^[^,;:]{3,60}?\s+(?:es|son|és|són)\s+(?:el|la|los|las|els|les|un|una)\s+(.{12,85})$/i);
             if (mm && !/^\p{Lu}/u.test(mm[1])) push(mm[1]);
           }
@@ -496,11 +556,12 @@
         for (const d of pickDistractors(fakeC, bank, x, r, level, (nat.source.match(W) || []).slice(0, 8))) push(low(d));
       }
       let answer = nat.answer, qtext = nat.question;
-      if (uniq.length < 2 && nat.type === 'def' && nat.subj && nat.pred && /^\p{Ll}/u.test(nat.pred) && nat.pred.length <= 110) {
+      if (uniq.length < 2 && nat.type === 'def' && nat.subj && nat.pred && /^\p{Ll}/u.test(nat.pred) && nat.pred.length <= 110 &&
+          !startsWithName(nat.pred) && toks(nat.pred).filter(w => !FUNC.has(w)).length >= 3 && !badSubject(nat.subj)) {
         // al revés: «¿Cómo se llama el pigmento verde de las hojas…?» → la clorofila / la fotosíntesis / …
         const predN = norm(nat.pred);
         const alt = [];
-        const add = d => { const k = norm(d); if (d && k !== norm(nat.subj) && !predN.includes(k.replace(/^(el|la|los|las|els|les|l')\s*/, '')) && !alt.some(a => norm(a) === k)) alt.push(d); };
+        const add = d => { const k = norm(d); if (d && !badSubject(d) && !badOption(d, nat.pred) && k !== norm(nat.subj) && !predN.includes(k.replace(/^(el|la|los|las|els|les|l')\s*/, '')) && !alt.some(a => norm(a) === k)) alt.push(d); };
         for (const n of nats.values()) if (n && n.subj && n !== nat && /^\p{Ll}/u.test(n.subj) === /^\p{Ll}/u.test(nat.subj)) add(n.subj);
         if (/^\p{Ll}/u.test(nat.subj)) {
           const ART = /^(el|la|los|las|els|les)$/;
@@ -571,5 +632,5 @@
     qs.forEach((q, i) => { if (answers[i] === q.answer) ok++; else wrong.push({ q, chosen: answers[i] }); });
     return { ok, total: qs.length, pct: qs.length ? Math.round(ok * 100 / qs.length) : 0, wrong };
   }
-  return { clean, sentences, summarize, keywords, generate, grade, reshuffle, candidates, tf, naturalQuestion, scoreSentences, isCleanMC, isClassicMC: isCleanMC, N_OPTS: 3, toThree, detectLang, CLOZE_RE };
+  return { clean, sentences, summarize, keywords, generate, grade, reshuffle, candidates, tf, naturalQuestion, scoreSentences, isCleanMC, isClassicMC: isCleanMC, mcProblem, badOption, FUNC, N_OPTS: 3, toThree, detectLang, CLOZE_RE };
 });
