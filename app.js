@@ -359,7 +359,7 @@ $('bBack1').onclick = () => { show('home'); renderLists(); paintAiBadge(); };
 // ---------- test ----------
 function startTest(qs, mode) {
   // Solo test clásico A/B/C: descarta preguntas antiguas con huecos o con 4 opciones
-  qs = (qs || []).filter(isMC);
+  qs = (qs || []).map((q, i) => EPGen.toThree(q, i + 1)).filter(isMC);
   if (!qs.length) return alert('No hay preguntas tipo test (A, B, C) para mostrar. Crea un test nuevo.');
   S.qs = qs; S.mode = mode;
   S.answers = new Array(qs.length).fill(null);

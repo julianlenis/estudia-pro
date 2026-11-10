@@ -131,6 +131,10 @@
     const mn = Math.min(...ns), mx = Math.max(...ns);
     if (mn === 0) return false;
     if (mn <= 2 && mx >= 7) return false; // mezcla de palabra suelta con frase larga
+    if (wc(question) < 3) return false;
+    // las 3 opciones copiadas tal cual dentro del enunciado: no es una pregunta real
+    const qn = qNorm(question);
+    if (options.every(o => qn.includes(qNorm(o)))) return false;
     return true;
   }
 
@@ -202,7 +206,8 @@
     const sumRule = needSummary
       ? '- summary: 3 a 6 frases con lo esencial del tema' + (title ? ' «' + title + '»' : '') + '.\n'
       : '- summary: array vacío [] (el resumen ya se pidió antes).\n';
-    return `Eres un profesor que crea tests de estudio en español a partir de apuntes.
+    return `Eres un profesor que crea tests de estudio a partir de apuntes.
+IDIOMA: escribe las preguntas, las opciones, las explicaciones y el resumen en el MISMO idioma que los apuntes (si están en catalán, todo en catalán; si están en castellano, en castellano).
 ${lvl}
 Crea exactamente ${n} preguntas tipo test de opción múltiple clásica sobre LO MÁS IMPORTANTE del material (definiciones, fechas, causas, procesos, datos clave).
 ${focus}${avoidBlock}Formato OBLIGATORIO de cada pregunta:
@@ -212,6 +217,8 @@ ${focus}${avoidBlock}Formato OBLIGATORIO de cada pregunta:
 - Solo UNA opción es correcta; las otras 2 son claramente incorrectas según el material pero plausibles.
 - Las 3 opciones son del mismo tipo de respuesta (3 años, 3 personas, 3 procesos, 3 definiciones…), de longitud parecida, y encajan gramaticalmente con la pregunta.
 - Opciones claras y completas: nada de palabras sueltas sin sentido ni fragmentos cortados.
+- NO copies trozos sueltos de los apuntes como opciones (por ejemplo dos palabras con mayúscula pegadas de una línea y la siguiente). Cada opción debe ser una respuesta real y con sentido a la pregunta.
+- Ignora títulos y encabezados (por ejemplo «Repaso rápido para el examen»): pregunta sobre el contenido.
 Reglas:
 - Preguntas claras, sin errores de ortografía ni gramática.
 - Las 3 opciones deben ser distintas; nunca dos iguales.
@@ -301,6 +308,22 @@ Responde SOLO con el JSON pedido.`;
         text, images, level, count: want, title, key,
         avoid: [], needSummary: true, chunkLabel: ''
       });
+      // Si el validador descartó preguntas mal formuladas, pide una vez las que faltan
+      if (parsed.questions.length < want) {
+        try {
+          await sleep(MIN_GAP_MS);
+          report(parsed.questions.length);
+          const more = await generateOne({
+            text, images, level, count: want - parsed.questions.length, title, key,
+            avoid: parsed.questions.map(q => q.question), needSummary: !parsed.summary.length, chunkLabel: '', temperature: 0.5
+          });
+          if (!parsed.summary.length && more.summary.length) parsed.summary = more.summary;
+          mergeQuestions(parsed.questions, more.questions);
+          parsed.questions = parsed.questions.slice(0, want);
+        } catch (e) {
+          if (!parsed.questions.length) throw e;
+        }
+      }
       if (!parsed.questions.length) {
         const e = new Error('invalid response: no valid questions');
         e.status = 0;
