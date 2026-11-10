@@ -75,7 +75,7 @@
     return msg || 'Error al usar la IA. Se usará el generador gratis sin IA.';
   }
 
-  async function callGemini(parts, { key, temperature } = {}) {
+  async function callGemini(parts, { key, temperature, schema } = {}) {
     const k = key || getKey();
     if (!k) { const e = new Error('no key'); e.status = 0; throw e; }
     const url = API_BASE + encodeURIComponent(MODEL) + ':generateContent';
@@ -84,7 +84,7 @@
       generationConfig: {
         temperature: temperature == null ? 0.4 : temperature,
         responseMimeType: 'application/json',
-        responseSchema: SCHEMA
+        responseSchema: schema || SCHEMA
       }
     };
     let res;
@@ -444,6 +444,74 @@ Responde SOLO con el JSON pedido.`;
     return true;
   }
 
+  // ---- Test ya hecho (PDF/foto): la IA SOLO copia y ordena, nunca inventa ----
+  const EXAM_SCHEMA = {
+    type: 'OBJECT',
+    properties: {
+      isExam: { type: 'BOOLEAN' },
+      questions: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            number: { type: 'INTEGER' },
+            question: { type: 'STRING' },
+            options: { type: 'ARRAY', items: { type: 'STRING' } },
+            keyLetter: { type: 'STRING', nullable: true }
+          },
+          required: ['number', 'question', 'options']
+        }
+      }
+    },
+    required: ['isExam', 'questions']
+  };
+  function examPrompt(fromImages) {
+    return [
+      'Tarea: ' + (fromImages ? 'transcribe' : 'estructura') + ' un TEST TIPO TEST YA HECHO. No eres un generador de preguntas.',
+      'Si el material NO es un test con preguntas numeradas y opciones (a, b, c…), responde {"isExam": false, "questions": []}.',
+      'Reglas estrictas:',
+      '- Copia cada enunciado y cada opción EXACTAMENTE como aparecen, palabra por palabra, en su idioma original (no traduzcas, no corrijas, no resumas, no reformules).',
+      '- Quita solo el número de la pregunta y la letra de la opción (a), b), A.…). Une las líneas partidas.',
+      '- Mantén el orden y el número de opciones de cada pregunta.',
+      '- keyLetter: la letra (a, b, c…) que da el SOLUCIONARIO o la clave de respuestas del propio documento para esa pregunta. Si el documento no da la solución de esa pregunta, keyLetter = null. NUNCA deduzcas ni inventes la respuesta.',
+      '- No añadas preguntas que no estén en el documento.',
+      'Responde solo JSON con el esquema indicado.'
+    ].join('\n');
+  }
+  /**
+   * Último recurso: la IA ordena un test ya extraído. Con texto, cada enunciado/opción se valida
+   * contra el original (tiene que aparecer tal cual) y cada letra contra el solucionario del texto.
+   */
+  async function structureExam({ text, images, key } = {}) {
+    images = images || [];
+    const parts = [{ text: examPrompt(!text && images.length) }];
+    if (text) parts.push({ text: 'DOCUMENTO:\n' + String(text).slice(0, 60000) });
+    for (const im of images.slice(0, 8)) parts.push({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } });
+    const raw = await callGemini(parts, { key, temperature: 0, schema: EXAM_SCHEMA });
+    let data; try { data = JSON.parse(raw); } catch { data = null; }
+    if (!data || !data.isExam || !Array.isArray(data.questions)) return { isExam: false, questions: [] };
+    const X = (typeof EPExam !== 'undefined') ? EPExam : (typeof require === 'function' ? require('./exam.js') : null);
+    let keyText = '';
+    if (text && X) { const ls = String(text).split(/\r?\n/); const ks = X.findKeyStart(ls); if (ks) keyText = ls.slice(ks.start).join('\n'); }
+    const keyMap = keyText && X ? X.parseKey(keyText.split('\n'), 999) : {};
+    const out = [];
+    for (const q of data.questions) {
+      const options = (q.options || []).map(o => String(o || '').trim()).filter(Boolean);
+      const question = String(q.question || '').trim();
+      if (!question || options.length < 2 || options.length > 6) continue;
+      if (text && X && !(X.verbatimIn(text, question) && options.every(o => X.verbatimIn(text, o)))) continue; // no es literal
+      let answer = null;
+      const l = String(q.keyLetter || '').trim().toLowerCase().replace(/[^a-f]/g, '');
+      const idx = l.length === 1 ? 'abcdef'.indexOf(l) : -1;
+      if (idx >= 0 && idx < options.length) {
+        if (text) { if (keyMap[q.number] === idx) answer = idx; } // solo si el solucionario del texto lo dice
+        else answer = idx; // foto: transcrito por la IA, se avisa al usuario
+      }
+      out.push({ exam: true, num: q.number || out.length + 1, question, options, answer, answerText: answer == null ? null : options[answer], keyMissing: answer == null, viaAi: true });
+    }
+    return { isExam: out.length >= 2, questions: out, keyed: out.filter(q => !q.keyMissing).length, total: out.length };
+  }
+
   async function blobToInline(blob, maxSide) {
     maxSide = maxSide || 1600;
     const bmp = await createImageBitmap(blob).catch(async () => {
@@ -467,7 +535,7 @@ Responde SOLO con el JSON pedido.`;
     MODEL, SCHEMA, KEY_LS,
     getKey, setKey, clearKey, hasKey,
     spanishError, callGemini, parseResponse, validateQuestions, isClassicQuestion, N_OPTS,
-    generate, generateOne, testKey, blobToInline, buildPrompt,
+    generate, generateOne, testKey, blobToInline, buildPrompt, structureExam, EXAM_SCHEMA,
     splitTextChunks, mergeQuestions, BATCH_SIZE, MIN_GAP_MS, MAX_QUESTIONS
   };
 });
